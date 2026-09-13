@@ -1,0 +1,86 @@
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import select
+
+from app.config import settings
+from app.core.database import init_db, AsyncSessionLocal
+from app.core.logger import logger
+from app.models.market import Instrument
+from app.api.v1 import auth, market, risk, system
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: initialize database tables and default instruments
+    logger.info("Starting up AI Intraday Signal Engine...")
+    await init_db()
+
+    # Seed initial instruments if missing
+    async with AsyncSessionLocal() as session:
+        default_instruments = [
+            {
+                "symbol": "NIFTY 50",
+                "name": "NIFTY 50 Benchmark Index",
+                "exchange": "NSE",
+                "lot_size": 25,
+                "tick_size": 0.05,
+                "instrument_type": "INDEX",
+            },
+            {
+                "symbol": "BANK NIFTY",
+                "name": "NIFTY Bank Sectoral Index",
+                "exchange": "NSE",
+                "lot_size": 15,
+                "tick_size": 0.05,
+                "instrument_type": "INDEX",
+            },
+        ]
+        for inst_data in default_instruments:
+            stmt = select(Instrument).where(Instrument.symbol == inst_data["symbol"])
+            res = await session.execute(stmt)
+            if not res.scalar_one_or_none():
+                session.add(Instrument(**inst_data))
+                logger.info(f"Initialized default instrument: {inst_data['symbol']}")
+        await session.commit()
+
+    logger.info("Application ready.")
+    yield
+    logger.info("Shutting down AI Intraday Signal Engine...")
+
+
+app = FastAPI(
+    title=settings.APP_NAME,
+    version="1.0.0",
+    description=(
+        "Production-ready AI-powered intraday trading signal platform for Indian stock markets "
+        "(NSE: NIFTY 50, BANK NIFTY). Generates BUY / SELL / NO TRADE signals, paper trading, and analytics."
+    ),
+    lifespan=lifespan,
+)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Register API routers
+app.include_router(auth.router, prefix="/api/v1")
+app.include_router(market.router, prefix="/api/v1")
+app.include_router(risk.router, prefix="/api/v1")
+app.include_router(system.router, prefix="/api/v1")
+
+
+@app.get("/")
+async def root():
+    return {
+        "app": settings.APP_NAME,
+        "version": "1.0.0",
+        "status": "online",
+        "market": "NSE (NIFTY 50 & BANK NIFTY)",
+        "disclaimer": system.MANDATORY_DISCLAIMER,
+    }
