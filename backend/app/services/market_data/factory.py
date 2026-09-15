@@ -14,9 +14,9 @@ def get_market_data_provider() -> BaseMarketDataProvider:
             logger.info("Initializing MockMarketDataProvider for Indian NSE Indices.")
             _provider_instance = MockMarketDataProvider()
         elif provider_type == "UPSTOX":
-            # Upstox provider stub for future live connection
-            logger.info("Using Upstox market data provider configuration.")
-            _provider_instance = MockMarketDataProvider()  # Fallback to mock if credentials not live
+            from app.services.market_data.upstox_provider import UpstoxMarketDataProvider
+            logger.info("Initializing UpstoxMarketDataProvider (Live NSE API V2 Feed).")
+            _provider_instance = UpstoxMarketDataProvider()
         elif provider_type == "ZERODHA":
             # Zerodha provider stub for future live connection
             logger.info("Using Zerodha Kite market data provider configuration.")

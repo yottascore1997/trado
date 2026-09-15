@@ -19,6 +19,7 @@ async def lifespan(app: FastAPI):
     # Seed initial instruments if missing
     async with AsyncSessionLocal() as session:
         default_instruments = [
+            # Indices
             {
                 "symbol": "NIFTY 50",
                 "name": "NIFTY 50 Benchmark Index",
@@ -34,6 +35,71 @@ async def lifespan(app: FastAPI):
                 "lot_size": 15,
                 "tick_size": 0.05,
                 "instrument_type": "INDEX",
+            },
+            # Top Liquid NSE Stocks
+            {
+                "symbol": "RELIANCE",
+                "name": "Reliance Industries Ltd",
+                "exchange": "NSE",
+                "lot_size": 250,
+                "tick_size": 0.05,
+                "instrument_type": "STOCK",
+            },
+            {
+                "symbol": "SBIN",
+                "name": "State Bank of India",
+                "exchange": "NSE",
+                "lot_size": 750,
+                "tick_size": 0.05,
+                "instrument_type": "STOCK",
+            },
+            {
+                "symbol": "ICICIBANK",
+                "name": "ICICI Bank Ltd",
+                "exchange": "NSE",
+                "lot_size": 700,
+                "tick_size": 0.05,
+                "instrument_type": "STOCK",
+            },
+            {
+                "symbol": "HDFCBANK",
+                "name": "HDFC Bank Ltd",
+                "exchange": "NSE",
+                "lot_size": 550,
+                "tick_size": 0.05,
+                "instrument_type": "STOCK",
+            },
+            {
+                "symbol": "INFY",
+                "name": "Infosys Ltd",
+                "exchange": "NSE",
+                "lot_size": 400,
+                "tick_size": 0.05,
+                "instrument_type": "STOCK",
+            },
+            {
+                "symbol": "TATASTEEL",
+                "name": "Tata Steel Ltd",
+                "exchange": "NSE",
+                "lot_size": 5500,
+                "tick_size": 0.05,
+                "instrument_type": "STOCK",
+            },
+            {
+                "symbol": "TCS",
+                "name": "Tata Consultancy Services Ltd",
+                "exchange": "NSE",
+                "lot_size": 175,
+                "tick_size": 0.05,
+                "instrument_type": "STOCK",
+            },
+            {
+                "symbol": "BHARTIARTL",
+                "name": "Bharti Airtel Ltd",
+                "exchange": "NSE",
+                "lot_size": 475,
+                "tick_size": 0.05,
+                "instrument_type": "STOCK",
             },
         ]
         for inst_data in default_instruments:

@@ -1,5 +1,5 @@
-import React from "react";
-import { Filter, ArrowUpRight, ArrowDownRight, Minus } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Filter, ArrowUpRight, ArrowDownRight, Minus, Loader2 } from "lucide-react";
 
 export interface SignalHistoryItem {
   id: string;
@@ -78,7 +78,54 @@ const SAMPLE_SIGNALS: SignalHistoryItem[] = [
   },
 ];
 
-export const SignalHistoryTable: React.FC = () => {
+export interface SignalHistoryTableProps {
+  signals?: SignalHistoryItem[];
+}
+
+export const SignalHistoryTable: React.FC<SignalHistoryTableProps> = ({ signals: initialSignals }) => {
+  const [signals, setSignals] = useState<SignalHistoryItem[]>(initialSignals || SAMPLE_SIGNALS);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (initialSignals && initialSignals.length > 0) {
+      setSignals(initialSignals);
+      return;
+    }
+
+    const fetchHistoricalTrades = async () => {
+      try {
+        setLoading(true);
+        const res = await fetch("http://localhost:8000/api/v1/market/backtest/run?symbol=NIFTY%2050");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.trades && data.trades.length > 0) {
+            const mapped: SignalHistoryItem[] = data.trades.slice(0, 10).map((t: any) => ({
+              id: t.id,
+              time: t.time,
+              instrument: t.instrument,
+              signal_type: t.type,
+              entry_price: t.entry_price,
+              stop_loss: t.stop_loss,
+              target_price: t.target,
+              ai_score: t.ai_score || 88,
+              risk_reward: "1:2.0",
+              result: t.result === "TARGET_HIT" ? "TARGET_HIT" : t.result === "STOP_LOSS_HIT" ? "STOP_LOSS_HIT" : "OPEN",
+              pnl: t.pnl,
+              setup_type: t.setup_type || "Price Action Breakout",
+              regime: t.regime || "TRENDING",
+            }));
+            setSignals(mapped);
+          }
+        }
+      } catch (e) {
+        // Fallback to sample signals
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchHistoricalTrades();
+  }, [initialSignals]);
+
   return (
     <div className="p-4 rounded-lg bg-slate-900/80 border border-slate-800 shadow-sm mt-5">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -113,7 +160,7 @@ export const SignalHistoryTable: React.FC = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60 font-mono">
-            {SAMPLE_SIGNALS.map((sig) => {
+            {signals.map((sig) => {
               const isBuy = sig.signal_type === "BUY";
               const isSell = sig.signal_type === "SELL";
               const isNoTrade = sig.signal_type === "NO_TRADE";

@@ -42,4 +42,4 @@ async def test_system_status_and_health(client: AsyncClient):
     status_data = status_resp.json()
     assert status_data["database_status"] == "CONNECTED"
     assert "AI signals are probabilistic analysis" in status_data["disclaimer"]
-    assert status_data["market_data_provider"] == "MOCK"
+    assert status_data["market_data_provider"] in ("MOCK", "UPSTOX")

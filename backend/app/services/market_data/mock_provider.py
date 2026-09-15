@@ -23,6 +23,16 @@ class MockMarketDataProvider(BaseMarketDataProvider):
         "NIFTY": 25150.0,
         "BANK NIFTY": 51800.0,
         "BANKNIFTY": 51800.0,
+        "RELIANCE": 2985.50,
+        "SBIN": 815.20,
+        "ICICIBANK": 1242.80,
+        "HDFCBANK": 1652.40,
+        "INFY": 1888.60,
+        "TATASTEEL": 152.40,
+        "TCS": 4255.00,
+        "BHARTIARTL": 1564.00,
+        "LT": 3680.50,
+        "AXISBANK": 1184.00,
     }
 
     VOLATILITY = {
@@ -30,6 +40,16 @@ class MockMarketDataProvider(BaseMarketDataProvider):
         "NIFTY": 0.0006,
         "BANK NIFTY": 0.0009,  # ~45 points 1m ATR
         "BANKNIFTY": 0.0009,
+        "RELIANCE": 0.0008,
+        "SBIN": 0.0009,
+        "ICICIBANK": 0.0008,
+        "HDFCBANK": 0.0007,
+        "INFY": 0.0008,
+        "TATASTEEL": 0.0011,
+        "TCS": 0.0007,
+        "BHARTIARTL": 0.0008,
+        "LT": 0.0008,
+        "AXISBANK": 0.0009,
     }
 
     def __init__(self):

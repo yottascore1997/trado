@@ -1,0 +1,19 @@
+{
+  "name": "ai-intraday-trading-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI-Powered Intraday Trading Platform for Indian Markets (NSE)",
+  "scripts": {
+    "dev": "concurrently -n \"backend,frontend\" -c \"cyan,green\" \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": ".venv/bin/uvicorn app.main:app --app-dir backend --reload --port 8000",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "test:backend": "cd backend && PYTHONPATH=. ../.venv/bin/pytest",
+    "seed": ".venv/bin/python scripts/seed_instruments.py",
+    "generate-data": ".venv/bin/python scripts/generate_sample_csv.py",
+    "generate-backtest-data": ".venv/bin/python scripts/generate_realistic_backtest_data.py"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  }
+}

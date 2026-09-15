@@ -6,7 +6,7 @@ import { X, UploadCloud, CheckCircle, AlertCircle, FileText, Loader2 } from "luc
 interface CSVImportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
+  onSuccess?: (symbol?: string) => void;
 }
 
 export const CSVImportModal: React.FC<CSVImportModalProps> = ({ isOpen, onClose, onSuccess }) => {
@@ -20,9 +20,19 @@ export const CSVImportModal: React.FC<CSVImportModalProps> = ({ isOpen, onClose,
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
+      const file = e.target.files[0];
+      setSelectedFile(file);
       setResult(null);
       setError(null);
+      // Auto-detect symbol from filename
+      const fname = file.name.toUpperCase();
+      if (fname.includes("BANKNIFTY") || fname.includes("BANK_NIFTY") || fname.includes("BANK NIFTY")) {
+        setSymbol("BANK NIFTY");
+      } else if (fname.includes("RELIANCE")) {
+        setSymbol("RELIANCE");
+      } else if (fname.includes("NIFTY")) {
+        setSymbol("NIFTY 50");
+      }
     }
   };
 
@@ -55,7 +65,7 @@ export const CSVImportModal: React.FC<CSVImportModalProps> = ({ isOpen, onClose,
 
       const data = await res.json();
       setResult(data);
-      if (onSuccess) onSuccess();
+      if (onSuccess) onSuccess(symbol);
     } catch (err: any) {
       // Simulate client-side validation summary for demo if backend is starting
       setError(err.message || "Failed to upload and validate CSV.");
@@ -95,6 +105,14 @@ export const CSVImportModal: React.FC<CSVImportModalProps> = ({ isOpen, onClose,
             >
               <option value="NIFTY 50">NIFTY 50 (Index)</option>
               <option value="BANK NIFTY">BANK NIFTY (Index)</option>
+              <option value="RELIANCE">RELIANCE (Stock)</option>
+              <option value="HDFCBANK">HDFCBANK (Stock)</option>
+              <option value="ICICIBANK">ICICIBANK (Stock)</option>
+              <option value="INFY">INFY (Stock)</option>
+              <option value="TCS">TCS (Stock)</option>
+              <option value="SBIN">SBIN (Stock)</option>
+              <option value="TATASTEEL">TATASTEEL (Stock)</option>
+              <option value="BHARTIARTL">BHARTIARTL (Stock)</option>
             </select>
           </div>
 
