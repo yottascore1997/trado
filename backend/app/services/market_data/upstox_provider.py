@@ -66,9 +66,20 @@ class UpstoxMarketDataProvider(BaseMarketDataProvider):
                 res = await client.get(url, headers=self._get_headers())
                 if res.status_code == 200:
                     data = res.json().get("data", {})
+                    data["token_expired"] = False
                     self.cached_profile = data
                     self._last_profile_fetch = now
                     return data
+                elif res.status_code == 401:
+                    logger.warning("Upstox Access Token is EXPIRED or invalid (UDAPI100050). Needs daily renewal.")
+                    return {
+                        "user_name": "MAYUR NANDLAL KHOTELE",
+                        "user_id": "HX3888",
+                        "broker": "UPSTOX",
+                        "is_active": False,
+                        "token_expired": True,
+                        "error": "Upstox Access Token has expired for today's market session.",
+                    }
                 else:
                     logger.warning(f"Upstox user/profile returned {res.status_code}: {res.text}")
         except Exception as e:
@@ -78,7 +89,8 @@ class UpstoxMarketDataProvider(BaseMarketDataProvider):
             "user_name": "MAYUR NANDLAL KHOTELE",
             "user_id": "HX3888",
             "broker": "UPSTOX",
-            "is_active": True,
+            "is_active": False,
+            "token_expired": True,
         }
 
     async def get_funds_and_margin(self) -> Dict[str, Any]:

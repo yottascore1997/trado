@@ -282,6 +282,7 @@ async def run_backtest_simulation(
     Run intraday backtest simulation on actual stored SQLite 1-minute historical candles.
     """
     from app.services.backtest_engine import BacktestEngine
+    engine = BacktestEngine(db)
     result = await engine.run_backtest(
         symbol=symbol,
         strategy=strategy,
@@ -362,25 +363,75 @@ async def get_broker_status():
     if is_upstox and hasattr(provider, "get_user_profile"):
         profile = await provider.get_user_profile()
         funds = await provider.get_funds_and_margin()
+        token_expired = profile.get("token_expired", False)
         return {
-            "connected": True,
+            "connected": not token_expired,
+            "token_valid": not token_expired,
             "broker": "UPSTOX",
             "user_name": profile.get("user_name", "MAYUR NANDLAL KHOTELE"),
             "user_id": profile.get("user_id", "HX3888"),
             "email": profile.get("email", "mayurkhotele1111@gmail.com"),
-            "is_active": profile.get("is_active", True),
+            "is_active": not token_expired,
             "funds": funds,
-            "provider_mode": "UPSTOX_LIVE_API_V2",
+            "provider_mode": "UPSTOX_LIVE_API_V2" if not token_expired else "UPSTOX_TOKEN_EXPIRED",
+            "error": profile.get("error") if token_expired else None,
         }
     else:
         return {
             "connected": False,
+            "token_valid": False,
             "broker": "MOCK",
             "user_name": "Paper Simulation Account",
             "user_id": "MOCK_001",
             "is_active": True,
             "provider_mode": "MOCK_DATA_FEED",
         }
+
+
+@router.post("/broker/update-token")
+async def update_broker_token(payload: dict):
+    """
+    Dynamically update Upstox Access Token for today's market session without restarting server.
+    """
+    token = payload.get("access_token")
+    if not token or len(token.strip()) < 20:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or empty Upstox access token provided.",
+        )
+
+    from app.config import settings
+    clean_token = token.strip()
+    settings.UPSTOX_ACCESS_TOKEN = clean_token
+
+    # Also persist to backend/.env
+    import os
+    import re
+    from pathlib import Path
+    try:
+        env_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
+        if env_path.exists():
+            text = env_path.read_text(encoding="utf-8")
+            if "UPSTOX_ACCESS_TOKEN" in text:
+                text = re.sub(r'UPSTOX_ACCESS_TOKEN=".*?"', f'UPSTOX_ACCESS_TOKEN="{clean_token}"', text)
+            else:
+                text += f'\nUPSTOX_ACCESS_TOKEN="{clean_token}"\n'
+            env_path.write_text(text, encoding="utf-8")
+    except Exception as e:
+        logger.warning(f"Could not persist token to .env: {e}")
+
+    # Reset in provider
+    from app.services.market_data.factory import get_market_data_provider
+    provider = get_market_data_provider()
+    if hasattr(provider, "access_token"):
+        provider.access_token = clean_token
+        provider.cached_profile = None
+        provider._last_profile_fetch = None
+
+    return {
+        "success": True,
+        "message": "Upstox Access Token updated successfully. Market feed reconnected.",
+    }
 
 
 # =====================================================================
