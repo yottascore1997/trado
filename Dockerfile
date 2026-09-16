@@ -8,11 +8,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Supports Railway build context from repo root with Dockerfile Path: backend/Dockerfile
 COPY backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy backend source code into container
 COPY backend/ /app/
 
 ENV PYTHONPATH=/app
