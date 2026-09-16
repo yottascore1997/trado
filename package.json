@@ -8,6 +8,7 @@
     "dev:backend": ".venv/bin/uvicorn app.main:app --app-dir backend --reload --port 8000",
     "dev:frontend": "npm --prefix frontend run dev",
     "build": "npm --prefix frontend run build",
+    "start": "npm --prefix frontend run start",
     "test:backend": "cd backend && PYTHONPATH=. ../.venv/bin/pytest",
     "seed": ".venv/bin/python scripts/seed_instruments.py",
     "generate-data": ".venv/bin/python scripts/generate_sample_csv.py",
