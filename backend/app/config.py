@@ -4,7 +4,7 @@ from pydantic import Field
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=[".env", "backend/.env"], extra="allow")
+    model_config = SettingsConfigDict(env_file=[".env", "../.env", "backend/.env"], extra="allow")
 
     APP_NAME: str = "AI Intraday Signal Engine"
     APP_ENV: str = "development"
