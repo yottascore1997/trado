@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { apiUrl } from "@/lib/api";
 import {
   Flame,
   ArrowUpRight,
@@ -328,12 +329,24 @@ export const TopStockSetups: React.FC<TopStockSetupsProps> = ({
     try {
       setLoadingSetups(true);
       const params = new URLSearchParams();
-      if (tradingPlan?.wallet_budget) params.append("wallet_budget", tradingPlan.wallet_budget.toString());
-      if (tradingPlan?.trading_mode) params.append("mode", tradingPlan.trading_mode);
-      if (tradingPlan?.risk_per_trade_pct) params.append("risk_pct", tradingPlan.risk_per_trade_pct.toString());
+
+      let activeB = tradingPlan?.wallet_budget;
+      let activeM = tradingPlan?.trading_mode;
+      let activeR = tradingPlan?.risk_per_trade_pct;
+
+      if (!activeB && typeof window !== "undefined") {
+        const savedB = localStorage.getItem("trado_wallet_budget");
+        if (savedB) activeB = parseFloat(savedB);
+        const savedM = localStorage.getItem("trado_trading_mode");
+        if (savedM) activeM = savedM;
+      }
+
+      if (activeB) params.append("wallet_budget", activeB.toString());
+      if (activeM) params.append("mode", activeM);
+      if (activeR) params.append("risk_pct", activeR.toString());
       params.append("_t", Date.now().toString());
 
-      const res = await fetch(`http://localhost:8000/api/v1/market/top-setups?${params.toString()}`);
+      const res = await fetch(apiUrl(`/api/v1/market/top-setups?${params.toString()}`));
       if (res.ok) {
         const data = await res.json();
         if (data.top_setups && data.top_setups.length > 0) {
@@ -349,7 +362,20 @@ export const TopStockSetups: React.FC<TopStockSetupsProps> = ({
   React.useEffect(() => {
     fetchTopSetups();
     const interval = setInterval(fetchTopSetups, 4000);
-    return () => clearInterval(interval);
+
+    const handlePlanUpdated = () => {
+      fetchTopSetups();
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("trado_plan_updated", handlePlanUpdated);
+    }
+
+    return () => {
+      clearInterval(interval);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("trado_plan_updated", handlePlanUpdated);
+      }
+    };
   }, [tradingPlan?.wallet_budget, tradingPlan?.trading_mode, tradingPlan?.risk_per_trade_pct]);
 
   const activeList = liveSetups.length > 0 ? liveSetups : setups;

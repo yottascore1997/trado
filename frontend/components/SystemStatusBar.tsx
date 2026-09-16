@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { apiUrl } from "@/lib/api";
 import { Database, Server, Cpu, Radio, Shield, Clock } from "lucide-react";
 
 export const SystemStatusBar: React.FC = () => {
@@ -15,7 +16,7 @@ export const SystemStatusBar: React.FC = () => {
   useEffect(() => {
     const fetchStatus = async () => {
       try {
-        const res = await fetch(`http://localhost:8000/api/v1/market/broker/status?_t=${Date.now()}`);
+        const res = await fetch(apiUrl(`/api/v1/market/broker/status?_t=${Date.now()}`));
         if (res.ok) {
           const data = await res.json();
           setBrokerInfo(data);

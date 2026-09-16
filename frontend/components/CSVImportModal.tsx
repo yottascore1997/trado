@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { apiUrl } from "@/lib/api";
 import { X, UploadCloud, CheckCircle, AlertCircle, FileText, Loader2 } from "lucide-react";
 
 interface CSVImportModalProps {
@@ -52,7 +53,7 @@ export const CSVImportModal: React.FC<CSVImportModalProps> = ({ isOpen, onClose,
     try {
       // Direct API upload or mock fallback if backend offline
       const token = localStorage.getItem("token") || "";
-      const res = await fetch(`http://localhost:8000/api/v1/market/upload-csv?symbol=${encodeURIComponent(symbol)}`, {
+      const res = await fetch(apiUrl(`/api/v1/market/upload-csv?symbol=${encodeURIComponent(symbol)}`), {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,

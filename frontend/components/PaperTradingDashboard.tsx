@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import { apiUrl } from "@/lib/api";
 import {
   Wallet,
   TrendingUp,
@@ -99,8 +100,8 @@ export const PaperTradingDashboard: React.FC = () => {
     try {
       setIsLoading(true);
       const [sumRes, dayRes] = await Promise.all([
-        fetch(`http://localhost:8000/api/v1/market/paper/summary?_t=${Date.now()}`),
-        fetch(`http://localhost:8000/api/v1/market/paper/daywise-pnl?_t=${Date.now()}`),
+        fetch(apiUrl(`/api/v1/market/paper/summary?_t=${Date.now()}`)),
+        fetch(apiUrl(`/api/v1/market/paper/daywise-pnl?_t=${Date.now()}`)),
       ]);
 
       if (sumRes.ok) {
@@ -128,7 +129,7 @@ export const PaperTradingDashboard: React.FC = () => {
   const handleToggleAuto = async () => {
     try {
       setIsTogglingAuto(true);
-      const res = await fetch("http://localhost:8000/api/v1/market/paper/toggle-auto", {
+      const res = await fetch(apiUrl("/api/v1/market/paper/toggle-auto"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -149,7 +150,7 @@ export const PaperTradingDashboard: React.FC = () => {
 
   const handleSquareOff = async (positionId: string) => {
     try {
-      const res = await fetch("http://localhost:8000/api/v1/market/paper/close-position", {
+      const res = await fetch(apiUrl("/api/v1/market/paper/close-position"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ position_id: positionId }),
@@ -163,12 +164,18 @@ export const PaperTradingDashboard: React.FC = () => {
   };
 
   const handleReset = async () => {
-    if (!window.confirm("Reset paper wallet back to ₹10,000 clean state?")) return;
+    let currentB = 10000.0;
     try {
-      const res = await fetch("http://localhost:8000/api/v1/market/paper/reset", {
+      const saved = localStorage.getItem("trado_wallet_budget");
+      if (saved) currentB = parseFloat(saved) || currentB;
+    } catch (e) {}
+
+    if (!window.confirm(`Reset paper wallet back to ₹${currentB.toLocaleString("en-IN")} clean state?`)) return;
+    try {
+      const res = await fetch(apiUrl("/api/v1/market/paper/reset"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ budget: 10000.0 }),
+        body: JSON.stringify({ budget: currentB }),
       });
       if (res.ok) {
         fetchData();

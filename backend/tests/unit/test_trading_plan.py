@@ -5,7 +5,7 @@ from app.schemas.trading_plan import TradingPlanUpdate, ExecuteOrderIn
 
 
 def test_trading_plan_default_metrics():
-    mgr = TradingPlanManager()
+    mgr = TradingPlanManager(persist=False)
     plan = mgr.get_plan()
     assert plan["wallet_budget"] == 10000.0
     assert plan["trading_mode"] == "INTRADAY_STOCKS"
@@ -21,7 +21,7 @@ def test_trading_plan_default_metrics():
 
 
 def test_trading_plan_scale_to_100k():
-    mgr = TradingPlanManager()
+    mgr = TradingPlanManager(persist=False)
     mgr.update_plan(TradingPlanUpdate(wallet_budget=100000.0, risk_per_trade_pct=1.0))
     metrics = mgr.calculate_metrics()
 
@@ -34,7 +34,7 @@ def test_trading_plan_scale_to_100k():
 
 
 def test_trading_plan_modes():
-    mgr = TradingPlanManager()
+    mgr = TradingPlanManager(persist=False)
 
     # Bank Nifty Options Mode
     mgr.update_plan(TradingPlanUpdate(trading_mode="BANKNIFTY_OPTIONS"))
@@ -68,7 +68,7 @@ def test_stock_screener_dynamic_sizing_10k_vs_100k():
 
 
 def test_order_execution_within_wallet():
-    mgr = TradingPlanManager()
+    mgr = TradingPlanManager(persist=False)
     mgr.update_plan(TradingPlanUpdate(wallet_budget=10000.0, trading_mode="INTRADAY_STOCKS"))
 
     order = ExecuteOrderIn(
@@ -89,7 +89,7 @@ def test_order_execution_within_wallet():
 
 
 def test_order_execution_rejection_when_exceeding_wallet():
-    mgr = TradingPlanManager()
+    mgr = TradingPlanManager(persist=False)
     mgr.update_plan(TradingPlanUpdate(wallet_budget=10000.0, trading_mode="INTRADAY_STOCKS"))
 
     # Attempt order requiring huge margin (e.g. 5000 shares of Reliance at 3000 = ₹30 Lakh margin)
@@ -107,7 +107,7 @@ def test_order_execution_rejection_when_exceeding_wallet():
 
 
 def test_circuit_breaker_kill_switch():
-    mgr = TradingPlanManager()
+    mgr = TradingPlanManager(persist=False)
     mgr.toggle_kill_switch(True)
 
     order = ExecuteOrderIn(

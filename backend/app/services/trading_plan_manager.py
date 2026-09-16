@@ -1,4 +1,7 @@
+import os
+import json
 import uuid
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from app.core.logger import logger
@@ -11,14 +14,18 @@ from app.schemas.trading_plan import (
     ExecuteOrderOut,
 )
 
+PLAN_STORAGE_PATH = Path(__file__).resolve().parent.parent.parent / "trading_plan.json"
+
 
 class TradingPlanManager:
     """
     Manages user-controlled isolated Virtual Wallet, Trading Mode,
     Risk Ring-Fencing, and Order Sizing constraints.
+    Persists configuration to disk so settings survive reloads and restarts.
     """
 
-    def __init__(self):
+    def __init__(self, persist: bool = True):
+        self._persist = persist
         # Default starting state: ₹10,000 isolated wallet, Intraday Stocks, 1.5% risk
         self._plan = {
             "wallet_budget": 10000.0,
@@ -32,6 +39,29 @@ class TradingPlanManager:
         }
         self._margin_currently_locked = 0.0
         self._executed_orders = []
+        if self._persist:
+            self._load_persisted_plan()
+
+    def _load_persisted_plan(self):
+        try:
+            if PLAN_STORAGE_PATH.exists():
+                with open(PLAN_STORAGE_PATH, "r", encoding="utf-8") as f:
+                    saved = json.load(f)
+                    if isinstance(saved, dict):
+                        self._plan.update(saved)
+                        logger.info(f"Loaded persistent trading plan: budget=Rs.{self._plan.get('wallet_budget')}")
+        except Exception as e:
+            logger.warning(f"Could not load persisted trading plan: {e}")
+
+    def _save_persisted_plan(self):
+        if not self._persist:
+            return
+        try:
+            with open(PLAN_STORAGE_PATH, "w", encoding="utf-8") as f:
+                json.dump(self._plan, f, indent=2)
+            logger.info(f"Saved persistent trading plan: budget=Rs.{self._plan.get('wallet_budget')}")
+        except Exception as e:
+            logger.warning(f"Could not save trading plan: {e}")
 
     def get_plan(self) -> Dict[str, Any]:
         return dict(self._plan)
@@ -102,6 +132,15 @@ class TradingPlanManager:
             if v is not None:
                 self._plan[k] = v
 
+        self._save_persisted_plan()
+
+        # Immediately sync new budget with paper trading engine
+        try:
+            from app.services.paper_trading_engine import paper_trading_engine
+            paper_trading_engine.set_budget(self._plan["wallet_budget"])
+        except Exception as e:
+            logger.debug(f"Sync paper engine budget: {e}")
+
         metrics = self.calculate_metrics()
         return TradingPlanOut(
             wallet_budget=self._plan["wallet_budget"],
@@ -120,6 +159,7 @@ class TradingPlanManager:
             self._plan["kill_switch_active"] = not self._plan["kill_switch_active"]
         else:
             self._plan["kill_switch_active"] = active
+        self._save_persisted_plan()
         logger.warning(f"CIRCUIT BREAKER: Kill switch set to {self._plan['kill_switch_active']}")
         return self._plan["kill_switch_active"]
 

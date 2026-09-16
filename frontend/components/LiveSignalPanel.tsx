@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { apiUrl } from "@/lib/api";
 import { CheckCircle, AlertTriangle, ArrowUpRight, ArrowDownRight, Clock, ShieldAlert, Zap, BarChart, RefreshCw } from "lucide-react";
 
 export const LiveSignalPanel: React.FC = () => {
@@ -22,7 +23,7 @@ export const LiveSignalPanel: React.FC = () => {
 
   const fetchLiveSignal = async () => {
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/market/indices?_t=${Date.now()}`);
+      const res = await fetch(apiUrl(`/api/v1/market/indices?_t=${Date.now()}`));
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {

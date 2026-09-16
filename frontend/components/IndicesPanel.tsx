@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { apiUrl } from "@/lib/api";
 import { TrendingUp, TrendingDown, Minus, ShieldCheck, Compass, ArrowUpRight, ArrowDownRight, RefreshCw } from "lucide-react";
 
 export interface IndexData {
@@ -65,7 +66,7 @@ export const IndicesPanel: React.FC<IndicesPanelProps> = ({
   const fetchIndices = async () => {
     try {
       setIsRefreshing(true);
-      const res = await fetch(`http://localhost:8000/api/v1/market/indices?_t=${Date.now()}`);
+      const res = await fetch(apiUrl(`/api/v1/market/indices?_t=${Date.now()}`));
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {

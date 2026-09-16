@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { apiUrl } from "@/lib/api";
 import { Filter, ArrowUpRight, ArrowDownRight, Minus, Loader2 } from "lucide-react";
 
 export interface SignalHistoryItem {
@@ -95,7 +96,7 @@ export const SignalHistoryTable: React.FC<SignalHistoryTableProps> = ({ signals:
     const fetchHistoricalTrades = async () => {
       try {
         setLoading(true);
-        const res = await fetch("http://localhost:8000/api/v1/market/backtest/run?symbol=NIFTY%2050");
+        const res = await fetch(apiUrl("/api/v1/market/backtest/run?symbol=NIFTY%2050"));
         if (res.ok) {
           const data = await res.json();
           if (data.trades && data.trades.length > 0) {

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import { apiUrl } from "@/lib/api";
 import {
   Filter,
   ArrowUpRight,
@@ -387,7 +388,7 @@ export const StockScreenerTable: React.FC<StockScreenerTableProps> = ({
   const fetchScreenerData = useCallback(async () => {
     try {
       setIsLoading(true);
-      const res = await fetch(`http://localhost:8000/api/v1/market/screener?_t=${Date.now()}`);
+      const res = await fetch(apiUrl(`/api/v1/market/screener?_t=${Date.now()}`));
       if (res.ok) {
         const data = await res.json();
         const incoming = data.all_screened_stocks || data.top_setups;
@@ -410,7 +411,16 @@ export const StockScreenerTable: React.FC<StockScreenerTableProps> = ({
   useEffect(() => {
     fetchScreenerData();
     const interval = setInterval(fetchScreenerData, 4000);
-    return () => clearInterval(interval);
+    const handlePlan = () => fetchScreenerData();
+    if (typeof window !== "undefined") {
+      window.addEventListener("trado_plan_updated", handlePlan);
+    }
+    return () => {
+      clearInterval(interval);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("trado_plan_updated", handlePlan);
+      }
+    };
   }, [fetchScreenerData]);
 
   const sectors = ["ALL", "Banking", "Energy & Oil", "IT", "Metals", "Telecom"];

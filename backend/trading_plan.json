@@ -1,0 +1,10 @@
+{
+  "wallet_budget": 10000.0,
+  "trading_mode": "INTRADAY_STOCKS",
+  "risk_per_trade_pct": 1.0,
+  "max_daily_loss_pct": 3.0,
+  "max_active_trades": 2,
+  "auto_square_off_time": "15:15:00",
+  "is_paper_mode": true,
+  "kill_switch_active": false
+}

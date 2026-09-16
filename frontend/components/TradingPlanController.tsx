@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { apiUrl } from "@/lib/api";
 import {
   Wallet,
   ShieldCheck,
@@ -101,9 +102,31 @@ export const TradingPlanController: React.FC<Props> = ({ onPlanChange }) => {
   const [saveToast, setSaveToast] = useState<boolean>(false);
   const [brokerStatus, setBrokerStatus] = useState<any>(null);
 
+  // Load from localStorage immediately on mount
+  useEffect(() => {
+    try {
+      const savedBudget = localStorage.getItem("trado_wallet_budget");
+      const savedMode = localStorage.getItem("trado_trading_mode");
+      const savedRisk = localStorage.getItem("trado_risk_pct");
+      if (savedBudget) {
+        const p = parseFloat(savedBudget);
+        if (!isNaN(p) && p >= 1000) {
+          setBudget(p);
+          setCustomInput(p.toString());
+        }
+      }
+      if (savedMode) setSelectedMode(savedMode);
+      if (savedRisk) {
+        const r = parseFloat(savedRisk);
+        if (!isNaN(r)) setRiskPct(r);
+      }
+    } catch (e) {}
+    fetchPlan();
+  }, []);
+
   const fetchBrokerStatus = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/v1/market/broker/status");
+      const res = await fetch(apiUrl("/api/v1/market/broker/status"));
       if (res.ok) {
         const data = await res.json();
         setBrokerStatus(data);
@@ -111,12 +134,47 @@ export const TradingPlanController: React.FC<Props> = ({ onPlanChange }) => {
     } catch (e) {}
   };
 
+  // Helper to build fallback metrics for any budget
+  const createPlanData = (b: number, m: string, r: number, kill: boolean = false): TradingPlanData => {
+    const leverage = m === "INTRADAY_STOCKS" ? 5.0 : 1.0;
+    const maxActive = m === "INTRADAY_STOCKS" ? (b <= 25000 ? 2 : (b <= 50000 ? 3 : 4)) : 1;
+    return {
+      wallet_budget: b,
+      trading_mode: m,
+      risk_per_trade_pct: r,
+      max_daily_loss_pct: 3.0,
+      max_active_trades: maxActive,
+      auto_square_off_time: "15:15:00",
+      is_paper_mode: true,
+      kill_switch_active: kill,
+      metrics: {
+        wallet_budget: b,
+        effective_buying_power: b * leverage,
+        leverage_multiplier: leverage,
+        risk_per_trade_in_rs: round2((b * r) / 100),
+        daily_loss_limit_in_rs: round2(b * 0.03),
+        max_active_trades: maxActive,
+        allocation_per_stock_max: round2(b / maxActive),
+        mode_description: m === "INTRADAY_STOCKS"
+          ? "Intraday Cash Equities (5x Leverage, Auto 3:15 PM Square-off)"
+          : m === "SWING_TRADING"
+          ? "Cash Delivery Swing Portfolio (Multi-Day Hold, Zero Square-Off)"
+          : "Index Options (1 Lot ATM, Defined Risk)",
+        product_type: m === "SWING_TRADING" ? "CNC" : "MIS",
+        square_off_mandatory: m !== "SWING_TRADING",
+        kill_switch_active: kill,
+      },
+    };
+  };
+
+  const round2 = (num: number) => Math.round(num * 100) / 100;
+
   // Fetch initial plan from backend
   const fetchPlan = async () => {
     try {
       setLoading(true);
       fetchBrokerStatus();
-      const res = await fetch("http://localhost:8000/api/v1/market/trading-plan");
+      const res = await fetch(apiUrl(`/api/v1/market/trading-plan?_t=${Date.now()}`));
       if (res.ok) {
         const data = await res.json();
         setPlanData(data);
@@ -125,33 +183,23 @@ export const TradingPlanController: React.FC<Props> = ({ onPlanChange }) => {
         setSelectedMode(data.trading_mode);
         setRiskPct(data.risk_per_trade_pct);
         setKillSwitch(data.kill_switch_active);
+        try {
+          localStorage.setItem("trado_wallet_budget", data.wallet_budget.toString());
+          localStorage.setItem("trado_trading_mode", data.trading_mode);
+          localStorage.setItem("trado_risk_pct", data.risk_per_trade_pct.toString());
+        } catch (e) {}
         if (onPlanChange) onPlanChange(data);
+      } else {
+        throw new Error("Bad response");
       }
     } catch (e) {
-      // Fallback local state if backend is spinning up
-      const fallback: TradingPlanData = {
-        wallet_budget: 10000,
-        trading_mode: "INTRADAY_STOCKS",
-        risk_per_trade_pct: 1.5,
-        max_daily_loss_pct: 3.0,
-        max_active_trades: 2,
-        auto_square_off_time: "15:15:00",
-        is_paper_mode: true,
-        kill_switch_active: false,
-        metrics: {
-          wallet_budget: 10000,
-          effective_buying_power: 50000,
-          leverage_multiplier: 5.0,
-          risk_per_trade_in_rs: 150,
-          daily_loss_limit_in_rs: 300,
-          max_active_trades: 2,
-          allocation_per_stock_max: 5000,
-          mode_description: "Intraday Cash Equities (5x Leverage, Auto 3:15 PM Square-off)",
-          product_type: "MIS",
-          square_off_mandatory: true,
-          kill_switch_active: false,
-        },
-      };
+      // Fallback preserves user's current/saved budget instead of resetting
+      let currentB = budget;
+      try {
+        const savedB = localStorage.getItem("trado_wallet_budget");
+        if (savedB) currentB = parseFloat(savedB) || currentB;
+      } catch (err) {}
+      const fallback = createPlanData(currentB, selectedMode, riskPct, killSwitch);
       setPlanData(fallback);
       if (onPlanChange) onPlanChange(fallback);
     } finally {
@@ -159,15 +207,32 @@ export const TradingPlanController: React.FC<Props> = ({ onPlanChange }) => {
     }
   };
 
-  useEffect(() => {
-    fetchPlan();
-  }, []);
-
-  // Update plan on backend
+  // Update plan on backend & localStorage
   const updatePlan = async (newBudget: number, newMode: string, newRisk: number) => {
     try {
       setLoading(true);
-      const res = await fetch("http://localhost:8000/api/v1/market/trading-plan", {
+      // Persist to localStorage immediately
+      try {
+        localStorage.setItem("trado_wallet_budget", newBudget.toString());
+        localStorage.setItem("trado_trading_mode", newMode);
+        localStorage.setItem("trado_risk_pct", newRisk.toString());
+      } catch (e) {}
+
+      // Update immediate local UI state so user sees no lag
+      const optimistic = createPlanData(newBudget, newMode, newRisk, killSwitch);
+      setPlanData(optimistic);
+      if (onPlanChange) onPlanChange(optimistic);
+
+      // Notify other components via window event
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("trado_plan_updated", {
+            detail: { wallet_budget: newBudget, trading_mode: newMode, risk_pct: newRisk },
+          })
+        );
+      }
+
+      const res = await fetch(apiUrl("/api/v1/market/trading-plan"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -184,7 +249,9 @@ export const TradingPlanController: React.FC<Props> = ({ onPlanChange }) => {
         setTimeout(() => setSaveToast(false), 2500);
       }
     } catch (e) {
-      console.error(e);
+      console.error("Failed to update trading plan on backend:", e);
+      setSaveToast(true);
+      setTimeout(() => setSaveToast(false), 2500);
     } finally {
       setLoading(false);
     }
@@ -212,10 +279,12 @@ export const TradingPlanController: React.FC<Props> = ({ onPlanChange }) => {
 
   const handleToggleKillSwitch = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/v1/market/trading-plan/kill-switch", {
+      const nextKill = !killSwitch;
+      setKillSwitch(nextKill);
+      const res = await fetch(apiUrl("/api/v1/market/trading-plan/kill-switch"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ active: !killSwitch }),
+        body: JSON.stringify({ active: nextKill }),
       });
       if (res.ok) {
         const data = await res.json();

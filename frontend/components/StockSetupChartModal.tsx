@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { apiUrl } from "@/lib/api";
 import {
   X,
   Target,
@@ -145,7 +146,7 @@ export const StockSetupChartModal: React.FC<StockSetupChartModalProps> = ({
     try {
       setExecLoading(true);
       setExecError(null);
-      const res = await fetch("http://localhost:8000/api/v1/market/execute-order", {
+      const res = await fetch(apiUrl("/api/v1/market/execute-order"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

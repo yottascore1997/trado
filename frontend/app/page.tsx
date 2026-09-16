@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { apiUrl } from "@/lib/api";
 import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
 import { DisclaimerBanner } from "@/components/DisclaimerBanner";
@@ -49,7 +50,29 @@ export default function DashboardPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [marketStatus, setMarketStatus] = useState<any>(null);
-  const [tradingPlan, setTradingPlan] = useState<TradingPlanData | null>(null);
+  const [tradingPlan, setTradingPlan] = useState<TradingPlanData | null>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const savedB = localStorage.getItem("trado_wallet_budget");
+        if (savedB) {
+          const b = parseFloat(savedB);
+          if (!isNaN(b) && b >= 1000) {
+            return {
+              wallet_budget: b,
+              trading_mode: localStorage.getItem("trado_trading_mode") || "INTRADAY_STOCKS",
+              risk_per_trade_pct: parseFloat(localStorage.getItem("trado_risk_pct") || "1.5") || 1.5,
+              max_daily_loss_pct: 3.0,
+              max_active_trades: b <= 25000 ? 2 : 4,
+              auto_square_off_time: "15:15:00",
+              is_paper_mode: true,
+              kill_switch_active: false,
+            };
+          }
+        }
+      } catch (e) {}
+    }
+    return null;
+  });
   const [niftyTelemetry, setNiftyTelemetry] = useState<any>({
     price: 23118.60,
     change: -279.50,
@@ -76,7 +99,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchTelemetry = async () => {
       try {
-        const res = await fetch(`http://localhost:8000/api/v1/market/indices?_t=${Date.now()}`);
+        const res = await fetch(apiUrl(`/api/v1/market/indices?_t=${Date.now()}`));
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data) && data.length > 0) {
@@ -93,7 +116,7 @@ export default function DashboardPage() {
 
   const fetchDatasets = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/v1/market/datasets");
+      const res = await fetch(apiUrl("/api/v1/market/datasets"));
       if (res.ok) {
         const data = await res.json();
         setDatasets(data);
@@ -104,7 +127,7 @@ export default function DashboardPage() {
   const runBacktest = async (sym: string = backtestSymbol) => {
     try {
       setBacktestLoading(true);
-      const res = await fetch(`http://localhost:8000/api/v1/market/backtest/run?symbol=${encodeURIComponent(sym)}`);
+      const res = await fetch(apiUrl(`/api/v1/market/backtest/run?symbol=${encodeURIComponent(sym)}`));
       if (res.ok) {
         const data = await res.json();
         setBacktestData(data);
@@ -118,7 +141,7 @@ export default function DashboardPage() {
   const fetchCandles = async (sym: string = selectedSymbol, tf: string = selectedTimeframe) => {
     try {
       setChartLoading(true);
-      const res = await fetch(`http://localhost:8000/api/v1/market/candles?symbol=${encodeURIComponent(sym)}&timeframe=${encodeURIComponent(tf)}&limit=60`);
+      const res = await fetch(apiUrl(`/api/v1/market/candles?symbol=${encodeURIComponent(sym)}&timeframe=${encodeURIComponent(tf)}&limit=60`));
       if (res.ok) {
         const data = await res.json();
         setChartCandles(data);
@@ -133,7 +156,7 @@ export default function DashboardPage() {
     // Fetch system and market data status
     const checkStatus = async () => {
       try {
-        const res = await fetch("http://localhost:8000/api/v1/market/status?symbol=NIFTY%2050");
+        const res = await fetch(apiUrl("/api/v1/market/status?symbol=NIFTY%2050"));
         if (res.ok) {
           const data = await res.json();
           setMarketStatus(data);
