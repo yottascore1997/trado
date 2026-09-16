@@ -383,5 +383,76 @@ async def get_broker_status():
         }
 
 
+# =====================================================================
+# ZERO-RISK AUTOMATED PAPER TRADING & DAY-WISE P&L LEDGER ENDPOINTS
+# =====================================================================
+
+@router.get("/paper/summary")
+async def get_paper_summary():
+    """
+    Returns live paper trading metrics: Virtual Wallet (₹10,000), Margin Locked,
+    Unrealized MTM, Today's Realized P&L, Auto-Trading Status, and Open Positions.
+    """
+    from app.services.paper_trading_engine import paper_trading_engine
+    return paper_trading_engine.get_summary()
+
+
+@router.get("/paper/daywise-pnl")
+async def get_paper_daywise_pnl():
+    """
+    Returns complete Date-by-Date P&L Ledger:
+    Date, Total Trades, Wins, Losses, Win Rate %, Gross PnL, Charges, Net PnL, ROI % on Wallet.
+    """
+    from app.services.paper_trading_engine import paper_trading_engine
+    return paper_trading_engine.get_daywise_pnl()
+
+
+@router.post("/paper/toggle-auto")
+async def toggle_paper_auto_trading(payload: Optional[dict] = None):
+    """
+    Arms or pauses automated trade execution on Upstox Live feed.
+    """
+    from app.services.paper_trading_engine import paper_trading_engine
+    enabled = payload.get("enabled") if payload else None
+    new_state = paper_trading_engine.toggle_auto_trading(enabled)
+    return {
+        "auto_trading_enabled": new_state,
+        "status": "ARMED" if new_state else "PAUSED",
+        "message": "Auto-trading operational: Taking A+/A setups on Upstox live feed." if new_state else "Auto-trading paused.",
+    }
+
+
+@router.post("/paper/close-position")
+async def close_paper_position(payload: dict):
+    """
+    Closes an active open paper trade manually.
+    """
+    from app.services.paper_trading_engine import paper_trading_engine
+    position_id = payload.get("position_id")
+    if not position_id:
+        raise HTTPException(status_code=400, detail="Missing position_id")
+
+    res = paper_trading_engine.close_position(position_id, reason="MANUAL_CLOSE")
+    if not res:
+        raise HTTPException(status_code=404, detail="Position not found or already closed")
+    return res
+
+
+@router.post("/paper/reset")
+async def reset_paper_wallet(payload: Optional[dict] = None):
+    """
+    Resets Virtual Wallet balance (e.g. ₹10,000) and starts fresh.
+    """
+    from app.services.paper_trading_engine import paper_trading_engine
+    budget = payload.get("budget", 10000.0) if payload else 10000.0
+    paper_trading_engine.reset_account(budget)
+    return {
+        "success": True,
+        "message": f"Virtual wallet reset safely to ₹{budget:,.0f}.",
+        "summary": paper_trading_engine.get_summary(),
+    }
+
+
+
 
 

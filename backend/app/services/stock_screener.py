@@ -750,6 +750,15 @@ class StockScreenerService:
             "kill_switch_active": active_plan["kill_switch_active"],
         }
 
+        # Process live paper trading ticks and auto-entries
+        try:
+            from app.services.paper_trading_engine import paper_trading_engine
+            paper_trading_engine.set_budget(budget)
+            if live_quotes:
+                paper_trading_engine.process_market_tick(live_quotes, top_setups)
+        except Exception as e:
+            logger.warning(f"Error processing paper trading tick: {e}")
+
         return {
             "indices": indices,
             "funnel": funnel,

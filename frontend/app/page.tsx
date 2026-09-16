@@ -13,6 +13,7 @@ import { IndicesPanel } from "@/components/IndicesPanel";
 import { CSVImportModal } from "@/components/CSVImportModal";
 import { SystemStatusBar } from "@/components/SystemStatusBar";
 import { TradingPlanController, TradingPlanData } from "@/components/TradingPlanController";
+import { PaperTradingDashboard } from "@/components/PaperTradingDashboard";
 import {
   Activity,
   ShieldCheck,
@@ -656,82 +657,10 @@ export default function DashboardPage() {
           )}
 
           {/* ========================================================= */}
-          {/* TAB 5: PAPER TRADING                                      */}
+          {/* TAB 5: PAPER TRADING & DAY-WISE P&L LEDGER                */}
           {/* ========================================================= */}
           {activeTab === "paper" && (
-            <div className="space-y-5">
-              {/* Paper Account Summary */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="p-4 rounded-lg bg-slate-900/80 border border-slate-800">
-                  <span className="text-xs text-slate-400 block font-mono">Virtual Capital</span>
-                  <span className="text-2xl font-bold font-mono text-slate-100">₹1,00,000.00</span>
-                  <span className="text-[10px] text-slate-400 block mt-1">Starting Allocation</span>
-                </div>
-
-                <div className="p-4 rounded-lg bg-slate-900/80 border border-slate-800">
-                  <span className="text-xs text-slate-400 block font-mono">Realized PnL</span>
-                  <span className="text-2xl font-bold font-mono text-emerald-400">+₹3,400.00</span>
-                  <span className="text-[10px] text-emerald-400/80 block mt-1">3 Trades Closed</span>
-                </div>
-
-                <div className="p-4 rounded-lg bg-slate-900/80 border border-slate-800">
-                  <span className="text-xs text-slate-400 block font-mono">Unrealized MTM</span>
-                  <span className="text-2xl font-bold font-mono text-cyan-400">+₹1,850.00</span>
-                  <span className="text-[10px] text-cyan-400/80 block mt-1">1 Open Position</span>
-                </div>
-
-                <div className="p-4 rounded-lg bg-slate-900/80 border border-slate-800">
-                  <span className="text-xs text-slate-400 block font-mono">Available Margin</span>
-                  <span className="text-2xl font-bold font-mono text-slate-100">₹82,450.00</span>
-                  <span className="text-[10px] text-slate-400 block mt-1">Risk per trade: 0.5%</span>
-                </div>
-              </div>
-
-              {/* Active Open Positions */}
-              <div className="p-5 rounded-lg bg-slate-900/80 border border-slate-800 space-y-3">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                  <h3 className="font-bold text-sm text-slate-100">Open Paper Positions</h3>
-                  <span className="text-xs font-mono text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800/60">
-                    1 ACTIVE
-                  </span>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs text-left font-mono">
-                    <thead className="text-[11px] text-slate-400 uppercase bg-slate-950/70 border-b border-slate-800">
-                      <tr>
-                        <th className="py-2.5 px-3">Symbol</th>
-                        <th className="py-2.5 px-3">Type</th>
-                        <th className="py-2.5 px-3">Qty</th>
-                        <th className="py-2.5 px-3">Entry</th>
-                        <th className="py-2.5 px-3">Current</th>
-                        <th className="py-2.5 px-3">SL</th>
-                        <th className="py-2.5 px-3">Target</th>
-                        <th className="py-2.5 px-3">PnL</th>
-                        <th className="py-2.5 px-3 text-right">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800/60">
-                      <tr>
-                        <td className="py-3 px-3 font-bold text-slate-200">NIFTY 50 (1m)</td>
-                        <td className="py-3 px-3"><span className="px-1.5 py-0.5 rounded bg-emerald-900/60 text-emerald-300 font-bold">BUY</span></td>
-                        <td className="py-3 px-3 text-slate-300">25 (1 Lot)</td>
-                        <td className="py-3 px-3 text-slate-300">₹25,180.00</td>
-                        <td className="py-3 px-3 text-slate-100 font-bold">₹25,254.00</td>
-                        <td className="py-3 px-3 text-rose-400">₹25,150.00</td>
-                        <td className="py-3 px-3 text-emerald-400">₹25,240.00</td>
-                        <td className="py-3 px-3 text-emerald-400 font-bold">+₹1,850.00</td>
-                        <td className="py-3 px-3 text-right">
-                          <button className="px-2.5 py-1 rounded bg-slate-800 hover:bg-rose-900/40 text-slate-300 hover:text-rose-300 border border-slate-700 transition-colors">
-                            Square Off
-                          </button>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
+            <PaperTradingDashboard />
           )}
 
           {/* ========================================================= */}

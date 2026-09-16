@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # CORS
-    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:8000"]
+    CORS_ORIGINS: List[str] = ["*"]
 
 
 settings = Settings()

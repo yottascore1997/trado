@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +9,22 @@ from app.core.database import init_db, AsyncSessionLocal
 from app.core.logger import logger
 from app.models.market import Instrument
 from app.api.v1 import auth, market, risk, system
+
+
+async def background_market_poller():
+    """Continuously runs in background every 4s to scan Upstox live feed and update paper trades."""
+    logger.info("Background Upstox Live Market Poller started.")
+    await asyncio.sleep(2.0)  # brief warm-up delay
+    while True:
+        try:
+            from app.services.stock_screener import stock_screener_service
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, stock_screener_service.run_screener)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.debug(f"Background market scan: {e}")
+        await asyncio.sleep(4.0)
 
 
 @asynccontextmanager
@@ -111,8 +128,12 @@ async def lifespan(app: FastAPI):
         await session.commit()
 
     logger.info("Application ready.")
-    yield
-    logger.info("Shutting down AI Intraday Signal Engine...")
+    poller_task = asyncio.create_task(background_market_poller())
+    try:
+        yield
+    finally:
+        logger.info("Shutting down AI Intraday Signal Engine...")
+        poller_task.cancel()
 
 
 app = FastAPI(
