@@ -29,8 +29,12 @@ interface OpenPosition {
   quantity: number;
   entry_price: number;
   current_price: number;
+  initial_stop_loss?: number;
   stop_loss: number;
   target_price: number;
+  highest_price?: number;
+  lowest_price?: number;
+  trailing_stage?: string;
   margin_required: number;
   unrealized_pnl: number;
   pnl_pct: number;
@@ -58,6 +62,7 @@ interface ClosedTrade {
   exit_reason: string;
   setup_type: string;
   setup_tier: string;
+  trailing_stage?: string;
 }
 
 interface DayWiseRecord {
@@ -251,6 +256,38 @@ export const PaperTradingDashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* Daily Circuit Breaker Alert Banner */}
+      {summary.circuit_breaker_triggered && (
+        <div className="p-3.5 rounded-xl bg-rose-950/70 border border-rose-600/70 flex flex-wrap items-center justify-between gap-2 text-rose-200 text-xs font-mono shadow-lg shadow-rose-950/50">
+          <div className="flex items-center gap-2">
+            <span className="text-base">🛑</span>
+            <span className="font-bold tracking-wide">DAILY CIRCUIT BREAKER ACTIVE:</span>
+            <span>{summary.circuit_breaker_reason}</span>
+          </div>
+          <span className="px-2.5 py-0.5 rounded bg-rose-900 text-rose-200 text-[10px] font-bold uppercase border border-rose-700">
+            AUTOTRADE HALTED TODAY
+          </span>
+        </div>
+      )}
+
+      {/* Trading Window & Session Indicator */}
+      {summary.entry_window_status && !summary.circuit_breaker_triggered && (
+        <div className="px-3.5 py-2 rounded-lg bg-slate-900/70 border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+          <div className="flex items-center gap-2">
+            <span
+              className={`w-2 h-2 rounded-full inline-block ${summary.entry_window_active ? "bg-emerald-400 animate-pulse" : "bg-amber-400"}`}
+            />
+            <span className="text-slate-400">Execution Window:</span>
+            <span className={summary.entry_window_active ? "text-emerald-400 font-bold" : "text-amber-400 font-bold"}>
+              {summary.entry_window_active ? "ACTIVE (09:30 AM - 02:45 PM IST)" : summary.entry_window_status}
+            </span>
+          </div>
+          <span className="text-slate-500 text-[11px]">
+            {summary.market_session_open ? "🟢 NSE Market Open" : "⚪ NSE Regular Market Closed"}
+          </span>
+        </div>
+      )}
+
       {/* 4 Telemetry Metrics Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Virtual Capital */}
@@ -330,6 +367,48 @@ export const PaperTradingDashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* Intraday Stock Protection & Re-entry Status Tracker */}
+      {summary.symbol_protection_status && Object.keys(summary.symbol_protection_status).length > 0 && (
+        <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center space-x-2">
+              <ShieldCheck className="w-4 h-4 text-cyan-400" />
+              <span className="text-xs font-bold text-slate-200 uppercase font-mono">
+                Intraday Stock Protection & Re-entry Status
+              </span>
+            </div>
+            <span className="text-[11px] font-mono text-slate-400">
+              Rules: 🛑 1-Loss Lock • ⏳ 20m Cooldown • 🔒 Max 2 Trades/Stock
+            </span>
+          </div>
+
+          <div className="flex flex-wrap gap-2.5 pt-1">
+            {Object.values(summary.symbol_protection_status as Record<string, any>).map((st: any) => (
+              <div
+                key={st.symbol}
+                title={st.reason}
+                className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg border text-xs font-mono transition-colors ${
+                  st.status === "LOCKED_FOR_DAY"
+                    ? "bg-rose-950/50 border-rose-800/80 text-rose-300"
+                    : st.status === "COOLDOWN_ACTIVE"
+                    ? "bg-amber-950/50 border-amber-800/80 text-amber-300"
+                    : st.status === "MAX_TRADES_REACHED"
+                    ? "bg-slate-950 border-slate-700 text-slate-300"
+                    : "bg-emerald-950/50 border-emerald-800/80 text-emerald-300"
+                }`}
+              >
+                <span className="font-extrabold text-slate-100">{st.symbol}</span>
+                <span className="text-slate-500">•</span>
+                <span className="font-semibold">{st.badge}</span>
+                <span className="text-[10px] text-slate-400">
+                  ({st.trades_today}/2 {st.trades_today === 1 ? "trade" : "trades"})
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* SECTION 1: LIVE OPEN POSITIONS TABLE                                      */}
       {/* ========================================================================= */}
@@ -343,7 +422,7 @@ export const PaperTradingDashboard: React.FC = () => {
             </span>
           </div>
           <span className="text-[11px] font-mono text-slate-400">
-            Auto Exit on Target 🎯 or Stop-Loss 🛑
+            Smart Trailing SL 🔒 • Breakeven 🛡️ • Target 🎯
           </span>
         </div>
 
@@ -393,7 +472,19 @@ export const PaperTradingDashboard: React.FC = () => {
                       <td className="py-3 px-3 text-cyan-300 font-bold tabular-nums">
                         ₹{pos.current_price.toFixed(2)}
                       </td>
-                      <td className="py-3 px-3 text-rose-400">₹{pos.stop_loss.toFixed(2)}</td>
+                      <td className="py-3 px-3">
+                        <div className="text-rose-400 font-semibold">₹{pos.stop_loss.toFixed(2)}</div>
+                        {pos.trailing_stage === "PROFIT_LOCK" && (
+                          <span className="inline-block text-[9px] px-1 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
+                            🔒 Profit Locked
+                          </span>
+                        )}
+                        {pos.trailing_stage === "BREAKEVEN" && (
+                          <span className="inline-block text-[9px] px-1 py-0.2 rounded bg-amber-950 text-amber-300 border border-amber-800">
+                            🛡️ Breakeven (Cost)
+                          </span>
+                        )}
+                      </td>
                       <td className="py-3 px-3 text-emerald-400 font-semibold">₹{pos.target_price.toFixed(2)}</td>
                       <td className="py-3 px-3 text-slate-400">₹{pos.margin_required.toFixed(2)}</td>
                       <td className="py-3 px-3">
@@ -572,7 +663,21 @@ export const PaperTradingDashboard: React.FC = () => {
                                 </div>
                                 <div className="flex items-center space-x-3">
                                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-300">
-                                    {t.exit_reason === "TARGET_HIT" ? "🎯 TARGET HIT" : t.exit_reason === "STOP_LOSS_HIT" ? "🛑 STOP LOSS HIT" : t.exit_reason}
+                                    {t.exit_reason === "TARGET_HIT"
+                                      ? "🎯 TARGET HIT"
+                                      : t.exit_reason === "TRAILING_SL_HIT"
+                                      ? "🔒 TRAILING SL (PROFIT LOCK)"
+                                      : t.exit_reason === "BREAKEVEN_EXIT"
+                                      ? "🛡️ BREAKEVEN PROTECTED"
+                                      : t.exit_reason === "THESIS_INVALIDATED"
+                                      ? "⚡ EARLY EXIT (VWAP REVERSAL)"
+                                      : t.exit_reason === "INTRADAY_SQUARE_OFF"
+                                      ? "⏰ 3:15 PM AUTO EXIT"
+                                      : t.exit_reason === "STOP_LOSS_HIT"
+                                      ? "🛑 STOP LOSS HIT"
+                                      : t.exit_reason === "MANUAL_CLOSE"
+                                      ? "👤 MANUAL CLOSE"
+                                      : t.exit_reason}
                                   </span>
                                   <span
                                     className={`font-bold ${

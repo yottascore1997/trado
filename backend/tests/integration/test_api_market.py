@@ -58,7 +58,8 @@ async def test_instruments_and_quote(client: AsyncClient):
     assert quote_resp.status_code == 200
     quote = quote_resp.json()
     assert quote["symbol"] == "NIFTY 50"
-    assert quote["price"] > 0
+    assert quote["price"] >= 0
+    assert quote["market_status"] in ("OPEN", "CLOSED", "OFFLINE")
 
     # 3. Market Data Status before CSV upload
     status_resp = await client.get("/api/v1/market/status?symbol=NIFTY%2050")

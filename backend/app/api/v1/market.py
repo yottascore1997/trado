@@ -380,11 +380,11 @@ async def get_broker_status():
         return {
             "connected": False,
             "token_valid": False,
-            "broker": "MOCK",
-            "user_name": "Paper Simulation Account",
-            "user_id": "MOCK_001",
-            "is_active": True,
-            "provider_mode": "MOCK_DATA_FEED",
+            "broker": "UPSTOX",
+            "user_name": "Upstox User",
+            "user_id": "DISCONNECTED",
+            "is_active": False,
+            "provider_mode": "DISCONNECTED",
         }
 
 

@@ -24,350 +24,10 @@ interface StockScreenerTableProps {
   onSelectStock?: (stock: StockSetupItem) => void;
 }
 
-// Fallback items reflect current real-time Upstox quotes
-const ALL_SCREENED_STOCKS: StockSetupItem[] = [
-  {
-    symbol: "RELIANCE",
-    name: "Reliance Industries Ltd",
-    sector: "Energy & Oil",
-    price: 1235.30,
-    change: -22.20,
-    change_pct: -1.77,
-    vwap: 1243.60,
-    ema_9: 1240.20,
-    ema_20: 1247.50,
-    rvol: 2.15,
-    signal: "SELL",
-    ai_score: 86,
-    entry_price: 1235.30,
-    stop_loss: 1249.50,
-    target_price: 1205.50,
-    risk_pts: 14.20,
-    reward_pts: 29.80,
-    risk_reward: "1:2.1",
-    setup_type: "VWAP Breakdown + Rejection",
-    index_aligned: true,
-    alignment_status: "ALIGNED_BEARISH",
-    suggested_qty: 11,
-    margin_required: 2717.66,
-    source: "UPSTOX_LIVE",
-    primary_reason: "Price < VWAP with 2.15x RVOL & ALIGNED_BEARISH with NIFTY 50",
-    price_action_score: 18,
-    setup_tier: "A+",
-    market_structure: "LH_LL",
-    pa_setup: "Breakdown + Retest Rejection",
-    retest_level: 1242.00,
-    filter_verdict: "A+ Prime Short Setup: Confirmed breakdown below VWAP anchor.",
-    checklist: [
-      { rule: "Trend Bearish (5m/15m)", passed: true },
-      { rule: "Price < VWAP", passed: true },
-      { rule: "EMA 9 < EMA 20", passed: true },
-      { rule: "RVOL > 1.5x (2.15x)", passed: true },
-      { rule: "Opening Range Breakdown", passed: true },
-      { rule: "RR >= 1:2.0", passed: true },
-      { rule: "NIFTY Direction Aligned", passed: true },
-    ],
-  },
-  {
-    symbol: "SBIN",
-    name: "State Bank of India",
-    sector: "Banking",
-    price: 968.00,
-    change: -27.70,
-    change_pct: -2.78,
-    vwap: 976.25,
-    ema_9: 971.40,
-    ema_20: 979.80,
-    rvol: 1.95,
-    signal: "SELL",
-    ai_score: 87,
-    entry_price: 968.00,
-    stop_loss: 979.20,
-    target_price: 944.50,
-    risk_pts: 11.20,
-    reward_pts: 23.50,
-    risk_reward: "1:2.1",
-    setup_type: "VWAP Breakdown & Retest Rejection",
-    index_aligned: true,
-    alignment_status: "ALIGNED_BEARISH",
-    suggested_qty: 13,
-    margin_required: 2516.80,
-    source: "UPSTOX_LIVE",
-    primary_reason: "2.78% breakdown with 1.95x RVOL + Banking sector weakness",
-    price_action_score: 18,
-    setup_tier: "A+",
-    market_structure: "LH_LL",
-    pa_setup: "15m ORB Breakdown + Retest",
-    retest_level: 975.00,
-    filter_verdict: "A+ High-Conviction: 15m Range breakdown backed by heavy volume.",
-    checklist: [
-      { rule: "Trend Bearish (5m/15m)", passed: true },
-      { rule: "Price < VWAP", passed: true },
-      { rule: "EMA 9 < EMA 20", passed: true },
-      { rule: "RVOL > 1.5x (1.95x)", passed: true },
-      { rule: "Opening Range Breakdown", passed: true },
-      { rule: "RR >= 1:2.0", passed: true },
-      { rule: "NIFTY Direction Aligned", passed: true },
-    ],
-  },
-  {
-    symbol: "ICICIBANK",
-    name: "ICICI Bank Ltd",
-    sector: "Banking",
-    price: 1350.40,
-    change: -28.90,
-    change_pct: -2.10,
-    vwap: 1359.80,
-    ema_9: 1354.20,
-    ema_20: 1362.50,
-    rvol: 1.70,
-    signal: "SELL",
-    ai_score: 84,
-    entry_price: 1350.40,
-    stop_loss: 1365.50,
-    target_price: 1318.50,
-    risk_pts: 15.10,
-    reward_pts: 31.90,
-    risk_reward: "1:2.1",
-    setup_type: "Dynamic Pullback Rejection",
-    index_aligned: true,
-    alignment_status: "ALIGNED_BEARISH",
-    suggested_qty: 9,
-    margin_required: 2430.72,
-    source: "UPSTOX_LIVE",
-    primary_reason: "Price rejected from 9 EMA during downward continuation",
-    price_action_score: 18,
-    setup_tier: "A",
-    market_structure: "LH_LL",
-    pa_setup: "Resistance Retest / Dynamic 9 EMA",
-    retest_level: 1358.00,
-    filter_verdict: "A Setup: Dynamic pullback respecting prior support turned resistance.",
-    checklist: [
-      { rule: "Trend Bearish (5m/15m)", passed: true },
-      { rule: "Price < VWAP", passed: true },
-      { rule: "EMA 9 < EMA 20", passed: true },
-      { rule: "RVOL > 1.5x (1.70x)", passed: true },
-      { rule: "Opening Range Breakdown", passed: true },
-      { rule: "RR >= 1:2.0", passed: true },
-      { rule: "NIFTY Direction Aligned", passed: true },
-    ],
-  },
-  {
-    symbol: "INFY",
-    name: "Infosys Ltd",
-    sector: "IT",
-    price: 1077.00,
-    change: 39.30,
-    change_pct: 3.79,
-    vwap: 1064.20,
-    ema_9: 1072.50,
-    ema_20: 1060.00,
-    rvol: 1.85,
-    signal: "BUY",
-    ai_score: 88,
-    entry_price: 1077.00,
-    stop_loss: 1062.00,
-    target_price: 1108.50,
-    risk_pts: 15.00,
-    reward_pts: 31.50,
-    risk_reward: "1:2.1",
-    setup_type: "VWAP Breakout + IT Sector Rally",
-    index_aligned: false,
-    alignment_status: "COUNTER_TREND",
-    suggested_qty: 10,
-    margin_required: 2154.00,
-    source: "UPSTOX_LIVE",
-    primary_reason: "Strong sector decoupling (+3.79%) with 1.85x institutional volume",
-    price_action_score: 18,
-    setup_tier: "A",
-    market_structure: "HH_HL",
-    pa_setup: "Support Retest & Momentum Expansion",
-    retest_level: 1068.00,
-    filter_verdict: "A Buy Setup: Clean breakout above multi-day resistance.",
-    checklist: [
-      { rule: "Trend Bullish (5m/15m)", passed: true },
-      { rule: "Price > VWAP", passed: true },
-      { rule: "EMA 9 > EMA 20", passed: true },
-      { rule: "RVOL > 1.5x (1.85x)", passed: true },
-      { rule: "Opening Range Breakout", passed: true },
-      { rule: "RR >= 1:2.0", passed: true },
-      { rule: "Counter-Trend Caution", passed: true },
-    ],
-  },
-  {
-    symbol: "TATASTEEL",
-    name: "Tata Steel Ltd",
-    sector: "Metals",
-    price: 183.65,
-    change: 0.65,
-    change_pct: 0.35,
-    vwap: 184.66,
-    ema_9: 184.88,
-    ema_20: 184.66,
-    rvol: 1.33,
-    signal: "NO_TRADE",
-    ai_score: 62,
-    entry_price: 183.65,
-    stop_loss: 181.59,
-    target_price: 186.74,
-    risk_pts: 2.06,
-    reward_pts: 3.09,
-    risk_reward: "1:1.5",
-    setup_type: "Consolidation Near VWAP",
-    index_aligned: false,
-    alignment_status: "NEUTRAL",
-    suggested_qty: 72,
-    margin_required: 2644.56,
-    source: "UPSTOX_LIVE",
-    primary_reason: "Sub-threshold RVOL (1.33x); Chop near VWAP anchor",
-    price_action_score: 16,
-    setup_tier: "A",
-    market_structure: "HH_HL",
-    pa_setup: "Horizontal Shelf Breakout",
-    retest_level: 182.50,
-    filter_verdict: "A Setup (Watchlist): High-momentum breakout backed by NIFTY Metal support.",
-    checklist: [
-      { rule: "Trend Bullish (5m/15m)", passed: false },
-      { rule: "Price > VWAP", passed: false },
-      { rule: "EMA 9 > EMA 20", passed: false },
-      { rule: "RVOL > 1.5x", passed: false },
-      { rule: "Opening Range Breakout", passed: false },
-      { rule: "RR >= 1:2.0", passed: false },
-      { rule: "NSE Market Alignment", passed: true },
-    ],
-  },
-  {
-    symbol: "HDFCBANK",
-    name: "HDFC Bank Ltd",
-    sector: "Banking",
-    price: 716.55,
-    change: 8.30,
-    change_pct: 1.17,
-    vwap: 714.20,
-    ema_9: 715.80,
-    ema_20: 712.50,
-    rvol: 1.45,
-    signal: "NO_TRADE",
-    ai_score: 65,
-    entry_price: 716.55,
-    stop_loss: 708.50,
-    target_price: 728.50,
-    risk_pts: 8.05,
-    reward_pts: 11.95,
-    risk_reward: "1:1.5",
-    setup_type: "Consolidation Near VWAP",
-    index_aligned: false,
-    alignment_status: "NEUTRAL",
-    suggested_qty: 18,
-    margin_required: 2579.58,
-    source: "UPSTOX_LIVE",
-    primary_reason: "Moderate volume (1.45x); Awaiting 720 resistance hurdle",
-    price_action_score: 6,
-    setup_tier: "B",
-    market_structure: "SIDEWAYS_CHOP",
-    pa_setup: "Range Bound Near Pivot",
-    retest_level: 712.00,
-    filter_verdict: "B Setup (Watchlist): Consolidation awaiting directional trigger.",
-    checklist: [
-      { rule: "Trend Bullish", passed: true },
-      { rule: "Price > VWAP", passed: true },
-      { rule: "EMA 9 > EMA 20", passed: true },
-      { rule: "RVOL > 1.5x", passed: false },
-      { rule: "Opening Range Breakout", passed: false },
-      { rule: "RR >= 1:2.0", passed: false },
-      { rule: "NIFTY Direction Aligned", passed: false },
-    ],
-  },
-  {
-    symbol: "TCS",
-    name: "Tata Consultancy Services Ltd",
-    sector: "IT",
-    price: 2251.00,
-    change: 50.20,
-    change_pct: 2.21,
-    vwap: 2275.12,
-    ema_9: 2263.25,
-    ema_20: 2275.12,
-    rvol: 2.46,
-    signal: "NO_TRADE",
-    ai_score: 68,
-    entry_price: 2251.00,
-    stop_loss: 2215.00,
-    target_price: 2305.00,
-    risk_pts: 36.00,
-    reward_pts: 54.00,
-    risk_reward: "1:1.5",
-    setup_type: "Consolidation Near VWAP",
-    index_aligned: false,
-    alignment_status: "NEUTRAL",
-    suggested_qty: 4,
-    margin_required: 1800.80,
-    source: "UPSTOX_LIVE",
-    primary_reason: "High volume but hovering below session VWAP anchor",
-    price_action_score: 6,
-    setup_tier: "B",
-    market_structure: "SIDEWAYS_CHOP",
-    pa_setup: "Midday Sideways Range",
-    retest_level: 2240.00,
-    filter_verdict: "B Setup: High volume bounce; pending breakout above VWAP.",
-    checklist: [
-      { rule: "Trend Bullish", passed: true },
-      { rule: "Price > VWAP", passed: false },
-      { rule: "EMA 9 > EMA 20", passed: true },
-      { rule: "RVOL > 1.5x", passed: true },
-      { rule: "Opening Range Breakout", passed: false },
-      { rule: "RR >= 1:2.0", passed: false },
-      { rule: "NIFTY Direction Aligned", passed: false },
-    ],
-  },
-  {
-    symbol: "BHARTIARTL",
-    name: "Bharti Airtel Ltd",
-    sector: "Telecom",
-    price: 1625.00,
-    change: 6.50,
-    change_pct: 0.40,
-    vwap: 1622.00,
-    ema_9: 1624.00,
-    ema_20: 1620.00,
-    rvol: 1.35,
-    signal: "NO_TRADE",
-    ai_score: 66,
-    entry_price: 1625.00,
-    stop_loss: 1608.00,
-    target_price: 1650.00,
-    risk_pts: 17.00,
-    reward_pts: 25.00,
-    risk_reward: "1:1.5",
-    setup_type: "Consolidation After Gap Up",
-    index_aligned: true,
-    alignment_status: "NEUTRAL",
-    suggested_qty: 7,
-    margin_required: 2275.00,
-    source: "UPSTOX_LIVE",
-    primary_reason: "Moderate volume (1.35x); Risk reward 1:1.5 below 1:2.0 threshold",
-    price_action_score: 8,
-    setup_tier: "B",
-    market_structure: "HH_HL",
-    pa_setup: "Consolidation After Gap Up",
-    retest_level: 1618.00,
-    filter_verdict: "B Setup (Watchlist): Consolidating after gap up, pending clean range exit.",
-    checklist: [
-      { rule: "Trend Bullish", passed: true },
-      { rule: "Price > VWAP", passed: true },
-      { rule: "EMA 9 > EMA 20", passed: true },
-      { rule: "RVOL > 1.5x", passed: false },
-      { rule: "Opening Range Breakout", passed: true },
-      { rule: "RR >= 1:2.0", passed: false },
-      { rule: "NIFTY Direction Aligned", passed: true },
-    ],
-  },
-];
-
 export const StockScreenerTable: React.FC<StockScreenerTableProps> = ({
   onSelectStock,
 }) => {
-  const [stocks, setStocks] = useState<StockSetupItem[]>(ALL_SCREENED_STOCKS);
+  const [stocks, setStocks] = useState<StockSetupItem[]>([]);
   const [funnel, setFunnel] = useState<any>({
     universe_scanned: 2048,
     liquidity_passed: 185,
@@ -379,6 +39,7 @@ export const StockScreenerTable: React.FC<StockScreenerTableProps> = ({
   const [signalFilter, setSignalFilter] = useState("ALL");
   const [tierFilter, setTierFilter] = useState("ALL");
   const [alignedOnly, setAlignedOnly] = useState(false);
+  const [eligibleOnly, setEligibleOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [modalStock, setModalStock] = useState<StockSetupItem | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -434,6 +95,7 @@ export const StockScreenerTable: React.FC<StockScreenerTableProps> = ({
     if (signalFilter === "HIGH_SCORE" && stock.ai_score < 80) return false;
     if (tierFilter !== "ALL" && stock.setup_tier !== tierFilter) return false;
     if (alignedOnly && !stock.index_aligned) return false;
+    if (eligibleOnly && stock.is_eligible === false) return false;
     if (
       searchQuery &&
       !stock.symbol.toLowerCase().includes(searchQuery.toLowerCase()) &&
@@ -602,6 +264,20 @@ export const StockScreenerTable: React.FC<StockScreenerTableProps> = ({
               />
               <span>NIFTY Aligned Only</span>
             </label>
+
+            {/* Entry Eligible Only Checkbox */}
+            <label
+              className="flex items-center space-x-1.5 p-1.5 rounded bg-slate-950 border border-slate-800 text-slate-300 cursor-pointer font-mono text-[11px]"
+              title="Hide locked (1-SL) and cooldown stocks"
+            >
+              <input
+                type="checkbox"
+                checked={eligibleOnly}
+                onChange={(e) => setEligibleOnly(e.target.checked)}
+                className="accent-cyan-500 rounded"
+              />
+              <span>Entry Ready Only</span>
+            </label>
           </div>
         </div>
       </div>
@@ -643,13 +319,35 @@ export const StockScreenerTable: React.FC<StockScreenerTableProps> = ({
                   >
                     {/* Symbol & Sector */}
                     <td className="py-3.5 px-4">
-                      <div className="flex items-center space-x-1.5">
+                      <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
                         <span className="font-bold text-slate-100 group-hover:text-cyan-400 transition-colors">
                           {stock.symbol}
                         </span>
                         {isUpstox && (
                           <span className="text-[8px] font-extrabold px-1 py-0.2 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">
                             LIVE
+                          </span>
+                        )}
+                        {stock.is_eligible === false && (
+                          <span
+                            title={stock.eligibility_reason}
+                            className={`text-[8px] font-mono font-bold px-1.5 py-0.2 rounded border ${
+                              stock.eligibility_reason?.includes("Stop Loss")
+                                ? "bg-rose-950 text-rose-300 border-rose-800/80"
+                                : stock.eligibility_reason?.includes("Cooldown")
+                                ? "bg-amber-950 text-amber-300 border-amber-800/80"
+                                : stock.eligibility_reason?.includes("active")
+                                ? "bg-cyan-950 text-cyan-300 border-cyan-800/80"
+                                : "bg-slate-800 text-slate-300 border-slate-700"
+                            }`}
+                          >
+                            {stock.eligibility_reason?.includes("Stop Loss")
+                              ? "🛑 LOCKED"
+                              : stock.eligibility_reason?.includes("Cooldown")
+                              ? "⏳ COOLDOWN"
+                              : stock.eligibility_reason?.includes("active")
+                              ? "🔒 IN TRADE"
+                              : "🔒 BLOCKED"}
                           </span>
                         )}
                       </div>
@@ -778,17 +476,31 @@ export const StockScreenerTable: React.FC<StockScreenerTableProps> = ({
 
                     {/* Signal */}
                     <td className="py-3.5 px-3">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                          isBuy
-                            ? "bg-emerald-600 text-white"
-                            : isSell
-                            ? "bg-rose-600 text-white"
-                            : "bg-slate-800 text-slate-400 border border-slate-700"
-                        }`}
-                      >
-                        {stock.signal}
-                      </span>
+                      <div className="flex flex-col items-start gap-1">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            isBuy
+                              ? "bg-emerald-600 text-white"
+                              : isSell
+                              ? "bg-rose-600 text-white"
+                              : "bg-slate-800 text-slate-400 border border-slate-700"
+                          }`}
+                        >
+                          {stock.signal}
+                        </span>
+                        {stock.is_eligible === false && (
+                          <span
+                            title={stock.eligibility_reason}
+                            className="text-[9px] font-mono text-rose-400/90 truncate max-w-[85px]"
+                          >
+                            {stock.eligibility_reason?.includes("Stop Loss")
+                              ? "1-SL Lock"
+                              : stock.eligibility_reason?.includes("Cooldown")
+                              ? "Cooldown"
+                              : "Active Pos"}
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* Action Button */}

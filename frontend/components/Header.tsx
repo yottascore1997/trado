@@ -62,7 +62,7 @@ const tabTitles: Record<string, { title: string; subtitle: string }> = {
   },
   settings: {
     title: "Terminal Settings & Broker API",
-    subtitle: "Mock Mode, Upstox, Zerodha Kite API & Telegram Bot Webhook",
+    subtitle: "Upstox API v2 Live Market Feed & Telegram Bot Webhook",
   },
 };
 

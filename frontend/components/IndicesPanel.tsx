@@ -20,45 +20,15 @@ export interface IndexData {
   source?: string;
 }
 
-const DEFAULT_INDICES: IndexData[] = [
-  {
-    symbol: "NIFTY 50",
-    name: "NIFTY 50 Benchmark Index",
-    price: 23118.60,
-    change: -279.50,
-    change_pct: -1.19,
-    regime: "TRENDING_BEARISH",
-    trend: "BEARISH",
-    signal: "SELL",
-    ai_score: 84,
-    vwap: 23351.60,
-    day_high: 23592.85,
-    day_low: 23118.60,
-  },
-  {
-    symbol: "BANK NIFTY",
-    name: "NIFTY Bank Sectoral Index",
-    price: 55794.75,
-    change: -811.80,
-    change_pct: -1.43,
-    regime: "TRENDING_BEARISH",
-    trend: "BEARISH",
-    signal: "SELL",
-    ai_score: 83,
-    vwap: 56367.50,
-    day_high: 56996.35,
-    day_low: 55794.75,
-  },
-];
-
 interface IndicesPanelProps {
   indices?: IndexData[];
 }
 
 export const IndicesPanel: React.FC<IndicesPanelProps> = ({
-  indices = DEFAULT_INDICES,
+  indices = [],
 }) => {
   const [liveIndices, setLiveIndices] = React.useState<IndexData[]>(indices);
+
   const [isLive, setIsLive] = React.useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = React.useState<boolean>(false);
   const [lastSync, setLastSync] = React.useState<string>("");

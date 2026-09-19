@@ -94,7 +94,7 @@ export const SystemStatusBar: React.FC = () => {
                   UPSTOX API V2 LIVE ({brokerInfo.user_id || "HX3888"})
                 </span>
               ) : (
-                <span className="text-amber-400 font-bold">MOCK NSE FEED (OFFLINE)</span>
+                <span className="text-slate-400 font-bold">UPSTOX FEED (OFFLINE)</span>
               )}
             </div>
 
@@ -114,7 +114,7 @@ export const SystemStatusBar: React.FC = () => {
               <Radio className="w-3.5 h-3.5 text-emerald-400" />
               <span className="text-slate-300">Broker Stream:</span>
               <span className={isExpired ? "text-rose-400 font-semibold" : "text-emerald-400 font-semibold"}>
-                {isExpired ? "TOKEN EXPIRED" : isUpstox ? "LIVE FEED ACTIVE" : "SIMULATED"}
+                {isExpired ? "TOKEN EXPIRED" : isUpstox ? "LIVE FEED ACTIVE" : "STANDBY"}
               </span>
             </div>
           </div>
@@ -130,7 +130,7 @@ export const SystemStatusBar: React.FC = () => {
             </button>
             <div>
               <span>Provider: </span>
-              <span className="text-slate-200">{isUpstox ? "Upstox V2 (NSE Live)" : "Internal Mock"}</span>
+              <span className="text-slate-200">Upstox V2 (NSE Live)</span>
             </div>
             <div className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300">
               <span>NSE: 09:15 - 15:30 IST</span>

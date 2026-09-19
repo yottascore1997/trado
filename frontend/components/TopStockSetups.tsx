@@ -49,6 +49,11 @@ export interface StockSetupItem {
   margin_required?: number;
   max_risk_in_rs?: number;
   expected_reward_in_rs?: number;
+  // Institutional Strategy Upgrades
+  relative_strength?: number;
+  rs_status?: string;
+  composite_rank_score?: number;
+  atr_extension_ratio?: number;
   // Price Action Engine V2 Additions
   price_action_score?: number;
   setup_tier?: "A+" | "A" | "B" | "C";
@@ -57,256 +62,11 @@ export interface StockSetupItem {
   retest_level?: number;
   filter_verdict?: string;
   pa_checklist?: Array<{ rule: string; points: number; max: number; passed: boolean; detail?: string }>;
+  is_eligible?: boolean;
+  eligibility_reason?: string;
   source?: string;
 }
 
-const DEFAULT_SETUPS: StockSetupItem[] = [
-  {
-    symbol: "RELIANCE",
-    name: "Reliance Industries Ltd",
-    sector: "Energy & Oil",
-    price: 1235.30,
-    change: -22.20,
-    change_pct: -1.77,
-    vwap: 1245.62,
-    ema_9: 1240.20,
-    ema_20: 1248.50,
-    rvol: 2.15,
-    signal: "SELL",
-    ai_score: 95,
-    entry_price: 1235.30,
-    stop_loss: 1248.50,
-    target_price: 1208.00,
-    risk_pts: 13.2,
-    reward_pts: 27.3,
-    risk_reward: "1:2.1",
-    setup_type: "VWAP Breakdown & Retest Rejection",
-    index_aligned: true,
-    alignment_status: "ALIGNED_BEARISH",
-    suggested_qty: 13,
-    source: "UPSTOX_LIVE",
-    primary_reason: "Price < VWAP with 2.15x RVOL & ALIGNED_BEARISH with NIFTY 50",
-    price_action_score: 20,
-    setup_tier: "A+",
-    market_structure: "LH_LL",
-    pa_setup: "Breakout + Retest Continuation",
-    retest_level: 1245.50,
-    filter_verdict: "A+ Prime Setup: Confirmed Breakdown & Retest with strong S/R polarity flip and 2.15x RVOL.",
-    checklist: [
-      { rule: "Trend Confirmation (5m & 15m)", passed: true },
-      { rule: "VWAP Anchor (Price > VWAP)", passed: true },
-      { rule: "EMA 9 > EMA 20 Alignment", passed: true },
-      { rule: "Relative Volume > 1.5x (2.15x)", passed: true },
-      { rule: "Opening Range Breakout (ORB)", passed: true },
-      { rule: "Risk:Reward >= 1:2.0 (1:2.2)", passed: true },
-      { rule: "NSE Index Aligned (NIFTY +0.45% Bullish)", passed: true },
-    ],
-    pa_checklist: [
-      { rule: "Market Structure (HH + HL sequence)", points: 4, max: 4, passed: true, detail: "Series of Higher Highs & Higher Lows on 5m/15m" },
-      { rule: "Breakout Quality (Full-body close)", points: 4, max: 4, passed: true, detail: "Strong bullish expansion above ₹3,010 resistance" },
-      { rule: "Retest Confirmation (Support held)", points: 4, max: 4, passed: true, detail: "Prior resistance flipped to support near ₹3,012.50" },
-      { rule: "Volume Context (Breakout Surge)", points: 3, max: 3, passed: true, detail: "2.15x volume expansion on breakout" },
-      { rule: "Key S/R Interaction", points: 3, max: 3, passed: true, detail: "Breakout clean from morning 45-min consolidation shelf" },
-      { rule: "Candle Strength (Rejection Wick)", points: 2, max: 2, passed: true, detail: "Lower wick rejection on retest candle (buyers stepped in)" },
-    ],
-  },
-  {
-    symbol: "SBIN",
-    name: "State Bank of India",
-    sector: "Public Banking",
-    price: 968.00,
-    change: -27.70,
-    change_pct: -2.79,
-    vwap: 982.45,
-    ema_9: 974.20,
-    ema_20: 985.60,
-    rvol: 2.10,
-    signal: "SELL",
-    ai_score: 87,
-    entry_price: 968.00,
-    stop_loss: 982.50,
-    target_price: 938.00,
-    risk_pts: 14.5,
-    reward_pts: 30.0,
-    risk_reward: "1:2.1",
-    setup_type: "VWAP Breakdown & Retest Rejection",
-    index_aligned: true,
-    alignment_status: "ALIGNED_BEARISH",
-    suggested_qty: 10,
-    source: "UPSTOX_LIVE",
-    primary_reason: "Price < VWAP with 2.1x RVOL & ALIGNED_BEARISH with NIFTY 50",
-    price_action_score: 18,
-    setup_tier: "A+",
-    market_structure: "LH_LL",
-    pa_setup: "15m ORB Breakdown + Retest Rejection",
-    retest_level: 980.50,
-    filter_verdict: "A+ High-Conviction: Breakdown cleared support with confirmed resistance flip.",
-    checklist: [
-      { rule: "Trend Confirmation (5m & 15m)", passed: true },
-      { rule: "VWAP Anchor (Price < VWAP)", passed: true },
-      { rule: "EMA 9 < EMA 20 Alignment", passed: true },
-      { rule: "Relative Volume > 1.5x (2.10x)", passed: true },
-      { rule: "Opening Range Breakdown", passed: true },
-      { rule: "Risk:Reward >= 1:2.0 (1:2.1)", passed: true },
-      { rule: "NSE Index Aligned (NIFTY Bearish)", passed: true },
-    ],
-    pa_checklist: [
-      { rule: "Market Structure (LH + LL sequence)", points: 4, max: 4, passed: true, detail: "Morning breakdown resolved into bearish structure" },
-      { rule: "Breakdown Quality (Full-body close)", points: 4, max: 4, passed: true, detail: "Support floor breached with full body candle" },
-      { rule: "Retest Confirmation (Resistance held)", points: 4, max: 4, passed: true, detail: "Day low breakdown retested near ₹980.50 and rejected" },
-      { rule: "Volume Context (Breakdown Surge)", points: 3, max: 3, passed: true, detail: "2.10x volume surge on breakdown" },
-      { rule: "Key S/R Interaction", points: 3, max: 3, passed: true, detail: "Declining VWAP resistance confluence" },
-      { rule: "Candle Strength (Rejection Wick)", points: 2, max: 2, passed: true, detail: "Upper wick rejection confirmed sellers in control" },
-    ],
-  },
-  {
-    symbol: "ICICIBANK",
-    name: "ICICI Bank Ltd",
-    sector: "Private Banking",
-    price: 1350.40,
-    change: -28.90,
-    change_pct: -2.10,
-    vwap: 1367.53,
-    ema_9: 1358.10,
-    ema_20: 1370.20,
-    rvol: 1.85,
-    signal: "SELL",
-    ai_score: 85,
-    entry_price: 1350.40,
-    stop_loss: 1368.50,
-    target_price: 1312.00,
-    risk_pts: 18.1,
-    reward_pts: 38.4,
-    risk_reward: "1:2.1",
-    setup_type: "EMA 9 Dynamic Pullback Rejection",
-    index_aligned: true,
-    alignment_status: "ALIGNED_BEARISH",
-    suggested_qty: 8,
-    source: "UPSTOX_LIVE",
-    primary_reason: "Dynamic 9 EMA rejection + banking sector drag",
-    price_action_score: 18,
-    setup_tier: "A",
-    market_structure: "LH_LL",
-    pa_setup: "Support Retest / Dynamic 9 EMA Rejection",
-    retest_level: 1365.00,
-    filter_verdict: "A Setup: Textbook dynamic rejection respecting prior support turned resistance.",
-    checklist: [
-      { rule: "Trend Confirmation (5m & 15m)", passed: true },
-      { rule: "VWAP Anchor (Price < VWAP)", passed: true },
-      { rule: "EMA 9 < EMA 20 Alignment", passed: true },
-      { rule: "Relative Volume > 1.5x (1.85x)", passed: true },
-      { rule: "Opening Range Breakdown", passed: true },
-      { rule: "Risk:Reward >= 1:2.0 (1:2.1)", passed: true },
-      { rule: "NSE Index Aligned (NIFTY Bearish)", passed: true },
-    ],
-    pa_checklist: [
-      { rule: "Market Structure (LH + LL sequence)", points: 4, max: 4, passed: true, detail: "Downward trending stair-step structure" },
-      { rule: "Breakout Quality (Full-body close)", points: 3, max: 4, passed: true, detail: "Impulse move respected prior swing low" },
-      { rule: "Retest Confirmation (Resistance held)", points: 4, max: 4, passed: true, detail: "Tested prior support ₹1,365 as new resistance" },
-      { rule: "Volume Context (Breakdown Surge)", points: 2, max: 3, passed: true, detail: "Volume contracted on bounce, expanded on selloff" },
-      { rule: "Key S/R Interaction", points: 3, max: 3, passed: true, detail: "Confluence of 9 EMA + horizontal swing low" },
-      { rule: "Candle Strength (Rejection Wick)", points: 2, max: 2, passed: true, detail: "Shooting star rejection at resistance" },
-    ],
-  },
-  {
-    symbol: "INFY",
-    name: "Infosys Ltd",
-    sector: "Information Technology",
-    price: 1077.00,
-    change: 39.30,
-    change_pct: 3.79,
-    vwap: 1085.00,
-    ema_9: 1081.50,
-    ema_20: 1073.20,
-    rvol: 2.30,
-    signal: "BUY",
-    ai_score: 88,
-    entry_price: 1077.00,
-    stop_loss: 1062.00,
-    target_price: 1108.50,
-    risk_pts: 15.0,
-    reward_pts: 31.5,
-    risk_reward: "1:2.1",
-    setup_type: "Tech Counter-Trend Expansion",
-    index_aligned: false,
-    alignment_status: "DIVERGENT",
-    suggested_qty: 23,
-    source: "UPSTOX_LIVE",
-    primary_reason: "Heavy institutional buying & 3.79% rally against broad market",
-    price_action_score: 18,
-    setup_tier: "A",
-    market_structure: "HH_HL",
-    pa_setup: "Resistance Breakout & Retest Bounce",
-    retest_level: 1072.00,
-    filter_verdict: "A Setup: Strong IT sector resilience with 2.3x relative volume.",
-    checklist: [
-      { rule: "Trend Confirmation (5m & 15m)", passed: true },
-      { rule: "VWAP Anchor (Price near VWAP)", passed: true },
-      { rule: "EMA 9 > EMA 20 Alignment", passed: true },
-      { rule: "Relative Volume > 1.5x (2.30x)", passed: true },
-      { rule: "Opening Range Breakout", passed: true },
-      { rule: "Risk:Reward >= 1:2.0 (1:2.1)", passed: true },
-      { rule: "NSE Index Divergent (Higher Score)", passed: true },
-    ],
-    pa_checklist: [
-      { rule: "Market Structure (HH + HL sequence)", points: 4, max: 4, passed: true, detail: "Aggressive Higher Highs on 5m and 15m" },
-      { rule: "Breakout Quality (Full-body close)", points: 4, max: 4, passed: true, detail: "Strong green candle closed above ₹1,070 shelf" },
-      { rule: "Retest Confirmation (Support held)", points: 4, max: 4, passed: true, detail: "Brief pullback bounced precisely at ₹1,072.00" },
-      { rule: "Volume Context (Breakout Surge)", points: 3, max: 3, passed: true, detail: "2.30x institutional buying surge" },
-      { rule: "Key S/R Interaction", points: 3, max: 3, passed: true, detail: "Cleared 5-day range ceiling" },
-      { rule: "Candle Strength (Bullish Rejection)", points: 2, max: 2, passed: true, detail: "Lower wick rejection on support test" },
-    ],
-  },
-  {
-    symbol: "TATASTEEL",
-    name: "Tata Steel Ltd",
-    sector: "Metals & Mining",
-    price: 183.65,
-    change: 0.65,
-    change_pct: 0.35,
-    vwap: 184.50,
-    ema_9: 184.10,
-    ema_20: 183.80,
-    rvol: 1.65,
-    signal: "BUY",
-    ai_score: 82,
-    entry_price: 183.65,
-    stop_loss: 181.20,
-    target_price: 188.80,
-    risk_pts: 2.45,
-    reward_pts: 5.15,
-    risk_reward: "1:2.1",
-    setup_type: "Metals Shelf Consolidation Breakout",
-    index_aligned: false,
-    alignment_status: "DIVERGENT",
-    suggested_qty: 136,
-    source: "UPSTOX_LIVE",
-    primary_reason: "Holding above ₹183 support shelf with positive metal sector volume",
-    price_action_score: 16,
-    setup_tier: "A",
-    market_structure: "HH_HL",
-    pa_setup: "Horizontal Shelf Breakout",
-    retest_level: 153.50,
-    filter_verdict: "A Setup: High-momentum breakout backed by NIFTY Metal rally.",
-    checklist: [
-      { rule: "Trend Confirmation (5m & 15m)", passed: true },
-      { rule: "VWAP Anchor (Price > VWAP)", passed: true },
-      { rule: "EMA 9 > EMA 20 Alignment", passed: true },
-      { rule: "Relative Volume > 1.5x (2.40x)", passed: true },
-      { rule: "Opening Range Breakout (ORB)", passed: true },
-      { rule: "Risk:Reward >= 1:2.0 (1:2.0)", passed: true },
-      { rule: "NSE Index Aligned (NIFTY +0.45% Bullish)", passed: true },
-    ],
-    pa_checklist: [
-      { rule: "Market Structure (HH + HL sequence)", points: 4, max: 4, passed: true, detail: "Higher lows pressing aggressively into resistance" },
-      { rule: "Breakout Quality (Full-body close)", points: 4, max: 4, passed: true, detail: "High-volume green candle slicing through multi-day barrier" },
-      { rule: "Retest Confirmation (Support held)", points: 2, max: 4, passed: false, detail: "Fast momentum; shallow retest only reached ₹153.50" },
-      { rule: "Volume Context (Breakout Surge)", points: 3, max: 3, passed: true, detail: "2.4x massive sectoral volume explosion" },
-      { rule: "Key S/R Interaction", points: 3, max: 3, passed: true, detail: "Cleared 3-day swing high hurdle" },
-      { rule: "Candle Strength (Rejection Wick)", points: 2, max: 2, passed: true, detail: "Closing on high of the candle" },
-    ],
-  },
-];
 
 interface TopStockSetupsProps {
   setups?: StockSetupItem[];
@@ -315,7 +75,7 @@ interface TopStockSetupsProps {
 }
 
 export const TopStockSetups: React.FC<TopStockSetupsProps> = ({
-  setups = DEFAULT_SETUPS,
+  setups = [],
   tradingPlan,
   onSelectStock,
 }) => {
@@ -490,7 +250,13 @@ export const TopStockSetups: React.FC<TopStockSetupsProps> = ({
 
       {/* Setups List / Cards */}
       <div className="grid grid-cols-1 gap-3">
-        {filteredSetups.map((stock, idx) => {
+        {filteredSetups.length === 0 ? (
+          <div className="p-8 text-center text-slate-400 font-mono text-xs border border-slate-800 rounded-lg bg-slate-950/50">
+            {loadingSetups ? "Scanning liquid NSE universe on Upstox Live API..." : "No A+/A setups currently triggered. Monitoring real-time Upstox ticks..."}
+          </div>
+        ) : (
+          filteredSetups.map((stock, idx) => {
+
           const isBuy = stock.signal === "BUY";
           const isSell = stock.signal === "SELL";
           const isAPrime = stock.setup_tier === "A+";
@@ -543,6 +309,30 @@ export const TopStockSetups: React.FC<TopStockSetupsProps> = ({
                     >
                       {stock.signal}
                     </span>
+
+                    {/* Protection / Re-entry Status Badge */}
+                    {stock.is_eligible === false && (
+                      <span
+                        title={stock.eligibility_reason}
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold border flex items-center gap-1 ${
+                          stock.eligibility_reason?.includes("Stop Loss")
+                            ? "bg-rose-950 text-rose-300 border-rose-800/80"
+                            : stock.eligibility_reason?.includes("Cooldown")
+                            ? "bg-amber-950 text-amber-300 border-amber-800/80"
+                            : stock.eligibility_reason?.includes("active")
+                            ? "bg-cyan-950 text-cyan-300 border-cyan-800/80"
+                            : "bg-slate-800 text-slate-300 border-slate-700"
+                        }`}
+                      >
+                        {stock.eligibility_reason?.includes("Stop Loss")
+                          ? "🛑 LOCKED (1-SL)"
+                          : stock.eligibility_reason?.includes("Cooldown")
+                          ? "⏳ COOLDOWN"
+                          : stock.eligibility_reason?.includes("active")
+                          ? "🔒 IN TRADE"
+                          : "🔒 BLOCKED"}
+                      </span>
+                    )}
 
                     {/* Upstox Live Badge */}
                     {stock.source === "UPSTOX_LIVE" && (
@@ -614,10 +404,24 @@ export const TopStockSetups: React.FC<TopStockSetupsProps> = ({
                 <div className="text-slate-200 font-semibold text-[11px] truncate flex items-center gap-1.5">
                   <span>{stock.setup_type}</span>
                 </div>
-                <div className="flex items-center space-x-1.5 mt-1">
+                <div className="flex items-center space-x-1.5 mt-1 flex-wrap gap-1">
                   <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-slate-800 text-slate-300 border border-slate-700">
                     {stock.market_structure === "HH_HL" ? "HH + HL ↗" : stock.market_structure === "LH_LL" ? "LH + LL ↘" : "RANGE ↔"}
                   </span>
+                  {typeof stock.relative_strength === "number" && (
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold border ${
+                        stock.rs_status === "OUTPERFORMER"
+                          ? "bg-emerald-950/90 text-emerald-300 border-emerald-700/60"
+                          : stock.rs_status === "UNDERPERFORMER"
+                          ? "bg-rose-950/90 text-rose-300 border-rose-700/60"
+                          : "bg-slate-800 text-slate-300 border-slate-700"
+                      }`}
+                      title={`Relative Strength vs NIFTY 50: ${stock.relative_strength > 0 ? "+" : ""}${stock.relative_strength}%`}
+                    >
+                      RS {stock.relative_strength > 0 ? "+" : ""}{stock.relative_strength}%
+                    </span>
+                  )}
                   {stock.retest_level && (
                     <span className="text-[10px] font-mono text-cyan-400">
                       Retest ₹{stock.retest_level}
@@ -633,9 +437,20 @@ export const TopStockSetups: React.FC<TopStockSetupsProps> = ({
                 </div>
               </div>
 
-              {/* AI Score & Price Action Score Duo */}
+              {/* Multi-Factor Scores: Rank Score, AI Score & Price Action Score */}
               <div className="flex items-center space-x-3 shrink-0">
                 <div className="flex items-center space-x-3 bg-slate-900/80 px-3 py-1.5 rounded-lg border border-slate-800">
+                  {typeof stock.composite_rank_score === "number" && (
+                    <>
+                      <div className="text-right">
+                        <div className="text-[9px] uppercase font-mono text-amber-400 font-bold">Rank Score</div>
+                        <div className="text-sm font-black font-mono text-amber-300">
+                          {stock.composite_rank_score}
+                        </div>
+                      </div>
+                      <div className="h-6 w-px bg-slate-800" />
+                    </>
+                  )}
                   <div className="text-right">
                     <div className="text-[9px] uppercase font-mono text-slate-400">AI Score</div>
                     <div className="text-sm font-black font-mono text-cyan-400">
@@ -655,8 +470,10 @@ export const TopStockSetups: React.FC<TopStockSetupsProps> = ({
               </div>
             </div>
           );
-        })}
+        })
+      )}
       </div>
+
 
       {/* Interactive Candlestick Chart & Setup Overlay Visualizer Modal */}
       {selectedStock && (

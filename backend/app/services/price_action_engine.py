@@ -52,10 +52,35 @@ class PriceActionEngine:
         rvol: float,
         index_aligned: bool,
         setup_type: str,
+        market_regime: str = "TRENDING",
     ) -> PriceActionEvaluation:
         """
         Evaluates the 0-20 Price Action Scoring Rubric for a given stock.
         """
+        # Quantitative Market Regime Gatekeeper: If market is in Sideways Chop, block ORB breakouts
+        if market_regime == "SIDEWAYS_CHOP":
+            return PriceActionEvaluation(
+                score=4,
+                market_structure="SIDEWAYS_CHOP",
+                pa_setup="Chop & Whipsaw Risk",
+                setup_tier="C",
+                retest_level=current_price,
+                filter_verdict="C Setup (FILTERED): Index in Sideways Chop. Breakouts blocked.",
+                checklist=[
+                    {"rule": "Market Regime Filter", "points": 0, "max": 4, "passed": False, "detail": "NIFTY/Index in sideways compression (<0.35% range)"},
+                    {"rule": "Breakout Quality", "points": 1, "max": 4, "passed": False, "detail": "High risk of false breakout whipsaw"},
+                    {"rule": "Retest Confirmation", "points": 1, "max": 4, "passed": False, "detail": "No clean structure"},
+                    {"rule": "Volume Context", "points": 1, "max": 3, "passed": False, "detail": "Volume lacks expansion"},
+                    {"rule": "Key S/R Interaction", "points": 1, "max": 3, "passed": False, "detail": "Mid-range chop"},
+                    {"rule": "Candle Strength", "points": 0, "max": 2, "passed": False, "detail": "Overlapping wicks"},
+                ],
+                details={
+                    "max_score": 20,
+                    "score_percentage": 20.0,
+                    "is_prime_setup": False,
+                }
+            )
+
         is_buy = strategy_signal == "BUY"
         is_sell = strategy_signal == "SELL"
 

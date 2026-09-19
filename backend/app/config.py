@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
 
     # Market Data
-    MARKET_DATA_PROVIDER: str = "MOCK"
+    MARKET_DATA_PROVIDER: str = "UPSTOX"
     UPSTOX_CLIENT_ID: Optional[str] = None
     UPSTOX_CLIENT_SECRET: Optional[str] = None
     UPSTOX_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/upstox/callback"

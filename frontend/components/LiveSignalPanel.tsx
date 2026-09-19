@@ -7,16 +7,16 @@ import { CheckCircle, AlertTriangle, ArrowUpRight, ArrowDownRight, Clock, Shield
 export const LiveSignalPanel: React.FC = () => {
   const [indexData, setIndexData] = useState<any>({
     symbol: "NIFTY 50",
-    price: 23118.60,
-    change: -279.50,
-    change_pct: -1.19,
-    signal: "SELL",
-    trend: "BEARISH",
-    regime: "TRENDING_BEARISH",
-    ai_score: 84,
-    vwap: 23351.60,
-    day_high: 23592.85,
-    day_low: 23118.60,
+    price: 0,
+    change: 0,
+    change_pct: 0,
+    signal: "NO_TRADE",
+    trend: "SIDEWAYS",
+    regime: "MONITORING_LIVE",
+    ai_score: 75,
+    vwap: 0,
+    day_high: 0,
+    day_low: 0,
     source: "UPSTOX_LIVE",
   });
   const [isLive, setIsLive] = useState<boolean>(true);
@@ -43,12 +43,13 @@ export const LiveSignalPanel: React.FC = () => {
 
   const isBuy = indexData.signal === "BUY";
   const isSell = indexData.signal === "SELL";
-  const price = indexData.price || 23118.60;
-  const vwap = indexData.vwap || 23351.60;
-  const riskPts = Math.max(25, Math.round(Math.abs(price - vwap) * 0.7));
+  const price = indexData.price || 0;
+  const vwap = indexData.vwap || price;
+  const riskPts = Math.max(25, Math.round(Math.abs(price - vwap) * 0.7 || 30));
   const rewardPts = Math.round(riskPts * 2.0);
   const stopLoss = isBuy ? price - riskPts : price + riskPts;
   const targetPrice = isBuy ? price + rewardPts : price - rewardPts;
+
 
   return (
     <div className="p-5 rounded-lg bg-slate-900/90 border border-slate-800 shadow-md">
@@ -69,10 +70,22 @@ export const LiveSignalPanel: React.FC = () => {
               <h2 className="text-lg font-bold text-slate-100">{indexData.symbol}</h2>
               <span
                 className={`px-2.5 py-0.5 rounded text-xs font-bold font-mono uppercase shadow-sm ${
-                  isBuy ? "bg-emerald-600 text-white" : isSell ? "bg-rose-600 text-white" : "bg-slate-700 text-slate-200"
+                  indexData.regime === "SIDEWAYS_CHOP"
+                    ? "bg-amber-950/90 text-amber-300 border border-amber-700/60"
+                    : isBuy
+                    ? "bg-emerald-600 text-white"
+                    : isSell
+                    ? "bg-rose-600 text-white"
+                    : "bg-slate-700 text-slate-200"
                 }`}
               >
-                {indexData.signal === "BUY" ? "BUY SIGNAL" : indexData.signal === "SELL" ? "SELL SIGNAL" : "NO TRADE"}
+                {indexData.regime === "SIDEWAYS_CHOP"
+                  ? "CHOPPY (NO TRADE)"
+                  : indexData.signal === "BUY"
+                  ? "BUY SIGNAL"
+                  : indexData.signal === "SELL"
+                  ? "SELL SIGNAL"
+                  : "NO TRADE"}
               </span>
               {isLive && (
                 <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 shadow-sm">

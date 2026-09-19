@@ -188,6 +188,14 @@ class TradingPlanManager:
         max_risk_in_rs = round(order.quantity * risk_pts, 2)
         expected_profit_in_rs = round(order.quantity * reward_pts, 2)
 
+        # Rupee risk check against planned risk
+        allowed_risk_rs = metrics.risk_per_trade_in_rs
+        if allowed_risk_rs > 0 and max_risk_in_rs > round(allowed_risk_rs * 1.15, 2):
+            logger.warning(
+                f"ORDER RISK ADVISORY: Order risk ₹{max_risk_in_rs:,.2f} exceeds recommended "
+                f"per-trade risk of ₹{allowed_risk_rs:,.2f} for {order.symbol}."
+            )
+
         order_id = f"ORD-{uuid.uuid4().hex[:8].upper()}"
         buffer_remaining = round(max(0.0, budget - margin_required), 2)
 

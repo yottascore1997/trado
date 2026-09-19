@@ -74,13 +74,16 @@ export default function DashboardPage() {
     return null;
   });
   const [niftyTelemetry, setNiftyTelemetry] = useState<any>({
-    price: 23118.60,
-    change: -279.50,
-    change_pct: -1.19,
-    vwap: 23351.60,
-    day_high: 23592.85,
-    day_low: 23118.60,
+    price: 0,
+    change: 0,
+    change_pct: 0,
+    vwap: 0,
+    day_high: 0,
+    day_low: 0,
   });
+  const [indicesList, setIndicesList] = useState<any[]>([]);
+  const [paperSummary, setPaperSummary] = useState<any>(null);
+  const [daywiseLedger, setDaywiseLedger] = useState<any[]>([]);
 
   // Chart view timeframe state
   const [selectedTimeframe, setSelectedTimeframe] = useState("1m");
@@ -103,14 +106,37 @@ export default function DashboardPage() {
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data) && data.length > 0) {
+            setIndicesList(data);
             const nifty = data.find((d: any) => d.symbol === "NIFTY 50") || data[0];
             setNiftyTelemetry(nifty);
           }
         }
       } catch (e) {}
     };
+
+    const fetchPaperData = async () => {
+      try {
+        const [sumRes, pnlRes] = await Promise.all([
+          fetch(apiUrl(`/api/v1/market/paper/summary?_t=${Date.now()}`)),
+          fetch(apiUrl(`/api/v1/market/paper/daywise-pnl?_t=${Date.now()}`)),
+        ]);
+        if (sumRes.ok) {
+          const sData = await sumRes.json();
+          setPaperSummary(sData);
+        }
+        if (pnlRes.ok) {
+          const pData = await pnlRes.json();
+          setDaywiseLedger(pData);
+        }
+      } catch (e) {}
+    };
+
     fetchTelemetry();
-    const interval = setInterval(fetchTelemetry, 5000);
+    fetchPaperData();
+    const interval = setInterval(() => {
+      fetchTelemetry();
+      fetchPaperData();
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -269,43 +295,48 @@ export default function DashboardPage() {
                       <div className="flex justify-between p-2 rounded bg-slate-950/60">
                         <span className="text-slate-400">Live Price (LTP)</span>
                         <span className="font-bold text-slate-100">
-                          ₹{niftyTelemetry.price?.toLocaleString("en-IN") || "23,118.60"}{" "}
-                          <span className={niftyTelemetry.change >= 0 ? "text-emerald-400 text-[10px]" : "text-rose-400 text-[10px]"}>
-                            ({niftyTelemetry.change >= 0 ? "+" : ""}{niftyTelemetry.change} / {niftyTelemetry.change_pct}%)
-                          </span>
+                          {niftyTelemetry.price > 0 ? (
+                            <>
+                              ₹{niftyTelemetry.price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}{" "}
+                              <span className={niftyTelemetry.change >= 0 ? "text-emerald-400 text-[10px]" : "text-rose-400 text-[10px]"}>
+                                ({niftyTelemetry.change >= 0 ? "+" : ""}{niftyTelemetry.change} / {niftyTelemetry.change_pct}%)
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-slate-500 font-normal">Connecting to Upstox...</span>
+                          )}
                         </span>
                       </div>
 
                       <div className="flex justify-between p-2 rounded bg-slate-950/60">
                         <span className="text-slate-400">Intraday VWAP (Anchor)</span>
                         <span className="font-bold text-cyan-300">
-                          ₹{niftyTelemetry.vwap?.toLocaleString("en-IN") || "23,351.60"}
+                          {niftyTelemetry.vwap > 0
+                            ? `₹${niftyTelemetry.vwap.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
+                            : "—"}
                         </span>
                       </div>
 
                       <div className="flex justify-between p-2 rounded bg-slate-950/60">
                         <span className="text-slate-400">Day High / Low Range</span>
                         <span className="font-bold text-slate-200">
-                          ₹{niftyTelemetry.day_low} - ₹{niftyTelemetry.day_high}
+                          {niftyTelemetry.day_high > 0 && niftyTelemetry.day_low > 0
+                            ? `₹${niftyTelemetry.day_low.toLocaleString("en-IN", { minimumFractionDigits: 2 })} - ₹${niftyTelemetry.day_high.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
+                            : "—"}
                         </span>
-                      </div>
-
-                      <div className="flex justify-between p-2 rounded bg-slate-950/60">
-                        <span className="text-slate-400">EMA 9 / 20 / 50</span>
-                        <span className="font-bold text-emerald-400">
-                          {Math.round((niftyTelemetry.price || 23118) - 15)} / {Math.round((niftyTelemetry.price || 23118) - 35)} / {Math.round((niftyTelemetry.price || 23118) - 75)}
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between p-2 rounded bg-slate-950/60">
-                        <span className="text-slate-400">RSI 14</span>
-                        <span className="font-bold text-cyan-400">54.80 (Neutral)</span>
                       </div>
 
                       <div className="flex justify-between p-2 rounded bg-slate-950/60">
                         <span className="text-slate-400">Market Regime</span>
-                        <span className="font-bold text-amber-300">
-                          {niftyTelemetry.regime || "TRENDING_BEARISH"}
+                        <span className={`font-bold ${niftyTelemetry.change >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                          {niftyTelemetry.regime || (niftyTelemetry.price > 0 ? (niftyTelemetry.change >= 0 ? "TRENDING_BULLISH" : "TRENDING_BEARISH") : "CONNECTING...")}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between p-2 rounded bg-slate-950/60">
+                        <span className="text-slate-400">Data Feed Source</span>
+                        <span className="font-bold text-emerald-400">
+                          {niftyTelemetry.source === "UPSTOX_LIVE" || niftyTelemetry.price > 0 ? "UPSTOX API V2 (NSE LIVE)" : "WAITING FOR TICK"}
                         </span>
                       </div>
                     </div>
@@ -462,81 +493,131 @@ export default function DashboardPage() {
           {/* ========================================================= */}
           {/* TAB 3: MARKETS                                            */}
           {/* ========================================================= */}
-          {activeTab === "markets" && (
-            <div className="space-y-5">
-              <TopMarketCards />
+          {activeTab === "markets" && (() => {
+            const niftyQuote = indicesList.find((d: any) => d.symbol === "NIFTY 50") || niftyTelemetry;
+            const bankNiftyQuote = indicesList.find((d: any) => d.symbol === "BANK NIFTY");
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {/* NIFTY 50 Pivots */}
-                <div className="p-5 rounded-lg bg-slate-900/80 border border-slate-800 space-y-4">
-                  <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                    <div className="flex items-center space-x-2">
-                      <TrendingUp className="w-4 h-4 text-emerald-400" />
-                      <h3 className="font-bold text-sm text-slate-100">NIFTY 50 Intraday Pivots (CPR)</h3>
+            // NIFTY 50 Dynamic CPR
+            const nHigh = niftyQuote?.day_high || 0;
+            const nLow = niftyQuote?.day_low || 0;
+            const nClose = niftyQuote?.price || 0;
+            const nHasData = nHigh > 0 && nLow > 0 && nClose > 0;
+            const nPivot = nHasData ? (nHigh + nLow + nClose) / 3 : 0;
+            const nBC = nHasData ? (nHigh + nLow) / 2 : 0;
+            const nTC = nHasData ? (nPivot - nBC) + nPivot : 0;
+            const nR1 = nHasData ? (2 * nPivot) - nLow : 0;
+            const nS1 = nHasData ? (2 * nPivot) - nHigh : 0;
+            const nR2 = nHasData ? nPivot + (nHigh - nLow) : 0;
+            const nS2 = nHasData ? nPivot - (nHigh - nLow) : 0;
+            const nNarrow = nHasData && Math.abs(nTC - nBC) / nClose < 0.0025;
+
+            // BANK NIFTY Dynamic CPR
+            const bHigh = bankNiftyQuote?.day_high || 0;
+            const bLow = bankNiftyQuote?.day_low || 0;
+            const bClose = bankNiftyQuote?.price || 0;
+            const bHasData = bHigh > 0 && bLow > 0 && bClose > 0;
+            const bPivot = bHasData ? (bHigh + bLow + bClose) / 3 : 0;
+            const bBC = bHasData ? (bHigh + bLow) / 2 : 0;
+            const bTC = bHasData ? (bPivot - bBC) + bPivot : 0;
+            const bR1 = bHasData ? (2 * bPivot) - bLow : 0;
+            const bS1 = bHasData ? (2 * bPivot) - bHigh : 0;
+            const bR2 = bHasData ? bPivot + (bHigh - bLow) : 0;
+            const bS2 = bHasData ? bPivot - (bHigh - bLow) : 0;
+            const bNarrow = bHasData && Math.abs(bTC - bBC) / bClose < 0.0025;
+
+            return (
+              <div className="space-y-5">
+                <TopMarketCards
+                  niftyQuote={niftyQuote}
+                  bankNiftyQuote={bankNiftyQuote}
+                  paperSummary={paperSummary}
+                  tradingPlan={tradingPlan}
+                />
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {/* NIFTY 50 Pivots */}
+                  <div className="p-5 rounded-lg bg-slate-900/80 border border-slate-800 space-y-4">
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                      <div className="flex items-center space-x-2">
+                        <TrendingUp className="w-4 h-4 text-emerald-400" />
+                        <h3 className="font-bold text-sm text-slate-100">NIFTY 50 Intraday Pivots (CPR)</h3>
+                      </div>
+                      <span className="text-xs font-mono text-slate-400">
+                        {nHasData ? `Spot: ₹${nClose.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "Connecting to Upstox..."}
+                      </span>
                     </div>
-                    <span className="text-xs font-mono text-slate-400">Spot: ₹25,180.00</span>
+
+                    <div className="space-y-2 text-xs font-mono">
+                      <div className="flex justify-between p-2 rounded bg-rose-950/30 text-rose-300 border border-rose-900/40">
+                        <span>Resistance 2 (R2)</span>
+                        <span className="font-bold">{nHasData ? nR2.toFixed(2) : "—"}</span>
+                      </div>
+                      <div className="flex justify-between p-2 rounded bg-rose-950/20 text-rose-300 border border-rose-900/30">
+                        <span>Resistance 1 (R1)</span>
+                        <span className="font-bold">{nHasData ? nR1.toFixed(2) : "—"}</span>
+                      </div>
+                      <div className="flex justify-between p-2 rounded bg-cyan-950/40 text-cyan-300 border border-cyan-800/40 font-bold">
+                        <span>Central Pivot (TC / P / BC)</span>
+                        <span>
+                          {nHasData
+                            ? `${Math.min(nTC, nBC).toFixed(2)} - ${Math.max(nTC, nBC).toFixed(2)} (${nNarrow ? "Narrow CPR" : "Average CPR"})`
+                            : "—"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between p-2 rounded bg-emerald-950/20 text-emerald-300 border border-emerald-900/30">
+                        <span>Support 1 (S1)</span>
+                        <span className="font-bold">{nHasData ? nS1.toFixed(2) : "—"}</span>
+                      </div>
+                      <div className="flex justify-between p-2 rounded bg-emerald-950/30 text-emerald-300 border border-emerald-900/40">
+                        <span>Support 2 (S2)</span>
+                        <span className="font-bold">{nHasData ? nS2.toFixed(2) : "—"}</span>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="space-y-2 text-xs font-mono">
-                    <div className="flex justify-between p-2 rounded bg-rose-950/30 text-rose-300 border border-rose-900/40">
-                      <span>Resistance 2 (R2)</span>
-                      <span className="font-bold">25,295.40</span>
+                  {/* BANK NIFTY Pivots */}
+                  <div className="p-5 rounded-lg bg-slate-900/80 border border-slate-800 space-y-4">
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                      <div className="flex items-center space-x-2">
+                        <TrendingDown className="w-4 h-4 text-amber-400" />
+                        <h3 className="font-bold text-sm text-slate-100">BANK NIFTY Intraday Pivots (CPR)</h3>
+                      </div>
+                      <span className="text-xs font-mono text-slate-400">
+                        {bHasData ? `Spot: ₹${bClose.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "Connecting to Upstox..."}
+                      </span>
                     </div>
-                    <div className="flex justify-between p-2 rounded bg-rose-950/20 text-rose-300 border border-rose-900/30">
-                      <span>Resistance 1 (R1)</span>
-                      <span className="font-bold">25,240.00</span>
-                    </div>
-                    <div className="flex justify-between p-2 rounded bg-cyan-950/40 text-cyan-300 border border-cyan-800/40 font-bold">
-                      <span>Central Pivot (TC / P / BC)</span>
-                      <span>25,145.00 - 25,155.00 (Narrow CPR)</span>
-                    </div>
-                    <div className="flex justify-between p-2 rounded bg-emerald-950/20 text-emerald-300 border border-emerald-900/30">
-                      <span>Support 1 (S1)</span>
-                      <span className="font-bold">25,080.00</span>
-                    </div>
-                    <div className="flex justify-between p-2 rounded bg-emerald-950/30 text-emerald-300 border border-emerald-900/40">
-                      <span>Support 2 (S2)</span>
-                      <span className="font-bold">25,015.00</span>
-                    </div>
-                  </div>
-                </div>
 
-                {/* BANK NIFTY Pivots */}
-                <div className="p-5 rounded-lg bg-slate-900/80 border border-slate-800 space-y-4">
-                  <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                    <div className="flex items-center space-x-2">
-                      <TrendingDown className="w-4 h-4 text-amber-400" />
-                      <h3 className="font-bold text-sm text-slate-100">BANK NIFTY Intraday Pivots (CPR)</h3>
-                    </div>
-                    <span className="text-xs font-mono text-slate-400">Spot: ₹51,840.00</span>
-                  </div>
-
-                  <div className="space-y-2 text-xs font-mono">
-                    <div className="flex justify-between p-2 rounded bg-rose-950/30 text-rose-300 border border-rose-900/40">
-                      <span>Resistance 2 (R2)</span>
-                      <span className="font-bold">52,150.00</span>
-                    </div>
-                    <div className="flex justify-between p-2 rounded bg-rose-950/20 text-rose-300 border border-rose-900/30">
-                      <span>Resistance 1 (R1)</span>
-                      <span className="font-bold">51,980.00</span>
-                    </div>
-                    <div className="flex justify-between p-2 rounded bg-cyan-950/40 text-cyan-300 border border-cyan-800/40 font-bold">
-                      <span>Central Pivot (TC / P / BC)</span>
-                      <span>51,750.00 - 51,770.00</span>
-                    </div>
-                    <div className="flex justify-between p-2 rounded bg-emerald-950/20 text-emerald-300 border border-emerald-900/30">
-                      <span>Support 1 (S1)</span>
-                      <span className="font-bold">51,620.00</span>
-                    </div>
-                    <div className="flex justify-between p-2 rounded bg-emerald-950/30 text-emerald-300 border border-emerald-900/40">
-                      <span>Support 2 (S2)</span>
-                      <span className="font-bold">51,450.00</span>
+                    <div className="space-y-2 text-xs font-mono">
+                      <div className="flex justify-between p-2 rounded bg-rose-950/30 text-rose-300 border border-rose-900/40">
+                        <span>Resistance 2 (R2)</span>
+                        <span className="font-bold">{bHasData ? bR2.toFixed(2) : "—"}</span>
+                      </div>
+                      <div className="flex justify-between p-2 rounded bg-rose-950/20 text-rose-300 border border-rose-900/30">
+                        <span>Resistance 1 (R1)</span>
+                        <span className="font-bold">{bHasData ? bR1.toFixed(2) : "—"}</span>
+                      </div>
+                      <div className="flex justify-between p-2 rounded bg-cyan-950/40 text-cyan-300 border border-cyan-800/40 font-bold">
+                        <span>Central Pivot (TC / P / BC)</span>
+                        <span>
+                          {bHasData
+                            ? `${Math.min(bTC, bBC).toFixed(2)} - ${Math.max(bTC, bBC).toFixed(2)} (${bNarrow ? "Narrow CPR" : "Average CPR"})`
+                            : "—"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between p-2 rounded bg-emerald-950/20 text-emerald-300 border border-emerald-900/30">
+                        <span>Support 1 (S1)</span>
+                        <span className="font-bold">{bHasData ? bS1.toFixed(2) : "—"}</span>
+                      </div>
+                      <div className="flex justify-between p-2 rounded bg-emerald-950/30 text-emerald-300 border border-emerald-900/40">
+                        <span>Support 2 (S2)</span>
+                        <span className="font-bold">{bHasData ? bS2.toFixed(2) : "—"}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* ========================================================= */}
           {/* TAB 4: CHARTS                                             */}
@@ -1012,37 +1093,97 @@ export default function DashboardPage() {
           {/* ========================================================= */}
           {/* TAB 8: PERFORMANCE                                        */}
           {/* ========================================================= */}
-          {activeTab === "performance" && (
-            <div className="space-y-5">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="p-4 rounded-lg bg-slate-900/80 border border-slate-800">
-                  <span className="text-xs text-slate-400 block font-mono">Sharpe Ratio</span>
-                  <span className="text-2xl font-bold font-mono text-emerald-400">1.88</span>
-                  <span className="text-[10px] text-slate-400 block mt-1">Annualized risk-adjusted</span>
-                </div>
-                <div className="p-4 rounded-lg bg-slate-900/80 border border-slate-800">
-                  <span className="text-xs text-slate-400 block font-mono">Sortino Ratio</span>
-                  <span className="text-2xl font-bold font-mono text-emerald-400">2.52</span>
-                  <span className="text-[10px] text-slate-400 block mt-1">Downside deviation penalization</span>
-                </div>
-                <div className="p-4 rounded-lg bg-slate-900/80 border border-slate-800">
-                  <span className="text-xs text-slate-400 block font-mono">Calmar Ratio</span>
-                  <span className="text-2xl font-bold font-mono text-cyan-400">4.84</span>
-                  <span className="text-[10px] text-slate-400 block mt-1">Return vs Max Drawdown</span>
-                </div>
-              </div>
+          {activeTab === "performance" && (() => {
+            const capital = paperSummary?.wallet_budget || tradingPlan?.wallet_budget || 100000;
+            const todayRealized = paperSummary?.today_realized_pnl || 0;
+            const unrealizedMtm = paperSummary?.unrealized_mtm || 0;
+            const totalNetPnl = todayRealized + unrealizedMtm;
+            const totalTrades = (paperSummary?.closed_trades_today_count || 0) + (paperSummary?.open_positions_count || 0);
+            const ledgerRows = daywiseLedger || [];
+            const hasTrades = totalTrades > 0 || ledgerRows.length > 0;
 
-              <div className="p-5 rounded-lg bg-slate-900/80 border border-slate-800">
-                <h3 className="font-bold text-sm text-slate-100 mb-2">Equity Growth Curve</h3>
-                <p className="text-xs text-slate-400 mb-4">Cumulative capital growth starting from ₹1,00,000.</p>
-                <div className="h-48 rounded bg-slate-950 flex items-end p-4 space-x-2">
-                  {[10, 14, 12, 18, 22, 20, 26, 30, 28, 35, 42, 40, 48, 55, 52, 60, 68, 72, 70, 78, 85, 92, 98, 105, 114].map((h, i) => (
-                    <div key={i} style={{ height: `${h}%` }} className="flex-1 bg-gradient-to-t from-cyan-600/40 to-cyan-400 rounded-t-xs" />
-                  ))}
+            return (
+              <div className="space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="p-4 rounded-lg bg-slate-900/80 border border-slate-800">
+                    <span className="text-xs text-slate-400 block font-mono">Net Realized P&L</span>
+                    <span className={`text-2xl font-bold font-mono ${todayRealized >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                      {todayRealized >= 0 ? "+" : ""}₹{todayRealized.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                    </span>
+                    <span className="text-[10px] text-slate-400 block mt-1">Today's closed trade balance</span>
+                  </div>
+                  <div className="p-4 rounded-lg bg-slate-900/80 border border-slate-800">
+                    <span className="text-xs text-slate-400 block font-mono">Unrealized MTM</span>
+                    <span className={`text-2xl font-bold font-mono ${unrealizedMtm >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                      {unrealizedMtm >= 0 ? "+" : ""}₹{unrealizedMtm.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                    </span>
+                    <span className="text-[10px] text-slate-400 block mt-1">Live floating positions value</span>
+                  </div>
+                  <div className="p-4 rounded-lg bg-slate-900/80 border border-slate-800">
+                    <span className="text-xs text-slate-400 block font-mono">Account Capital</span>
+                    <span className="text-2xl font-bold font-mono text-cyan-400">
+                      ₹{capital.toLocaleString("en-IN")}
+                    </span>
+                    <span className="text-[10px] text-slate-400 block mt-1">Isolated paper trading budget</span>
+                  </div>
+                </div>
+
+                <div className="p-5 rounded-lg bg-slate-900/80 border border-slate-800">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="font-bold text-sm text-slate-100">Live Paper Trading Performance</h3>
+                      <p className="text-xs text-slate-400">Real-time tracking of executed setups and profit curves.</p>
+                    </div>
+                    <span className="text-xs font-mono text-cyan-400 bg-cyan-950 px-2.5 py-1 rounded border border-cyan-800/50">
+                      {totalTrades} Trades Executed
+                    </span>
+                  </div>
+
+                  {ledgerRows.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs font-mono">
+                        <thead className="bg-slate-950/60 text-slate-400 border-b border-slate-800">
+                          <tr>
+                            <th className="p-3">Date</th>
+                            <th className="p-3">Trades</th>
+                            <th className="p-3">Wins</th>
+                            <th className="p-3">Losses</th>
+                            <th className="p-3">Win Rate</th>
+                            <th className="p-3">Net P&L</th>
+                            <th className="p-3">ROI %</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/60">
+                          {ledgerRows.map((row: any, i: number) => (
+                            <tr key={i} className="hover:bg-slate-800/30 transition-colors">
+                              <td className="p-3 text-slate-200">{row.date}</td>
+                              <td className="p-3 text-slate-300">{row.total_trades}</td>
+                              <td className="p-3 text-emerald-400 font-bold">{row.wins}</td>
+                              <td className="p-3 text-rose-400 font-bold">{row.losses}</td>
+                              <td className="p-3 text-cyan-300">{row.win_rate}%</td>
+                              <td className={`p-3 font-bold ${row.net_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                                {row.net_pnl >= 0 ? "+" : ""}₹{row.net_pnl.toFixed(2)}
+                              </td>
+                              <td className={`p-3 font-semibold ${row.roi_pct >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                                {row.roi_pct >= 0 ? "+" : ""}{row.roi_pct}%
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="py-12 text-center text-slate-400 font-mono text-xs space-y-2 bg-slate-950/40 rounded-lg border border-slate-800/60">
+                      <p className="text-slate-300 font-semibold">No closed paper trades recorded yet today.</p>
+                      <p className="text-slate-500">
+                        Select a high-conviction setup from the Screener or Dashboard to execute live paper trades.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* ========================================================= */}
           {/* TAB 8: RISK ENGINE & CIRCUIT BREAKERS                     */}
@@ -1120,9 +1261,8 @@ export default function DashboardPage() {
                 <div className="space-y-1">
                   <label className="text-slate-400 block">Market Data Provider</label>
                   <select className="w-full p-2.5 rounded bg-slate-950 border border-slate-800 text-slate-200 focus:border-cyan-500 outline-none">
-                    <option value="MOCK">MOCK (Real-time Synthetic NSE Stream)</option>
-                    <option value="UPSTOX">Upstox API v2</option>
-                    <option value="ZERODHA">Zerodha Kite Connect</option>
+                    <option value="UPSTOX">Upstox API v2 (NSE Live Feed)</option>
+                    <option value="ZERODHA" disabled>Zerodha Kite Connect (Coming Soon)</option>
                   </select>
                 </div>
 
