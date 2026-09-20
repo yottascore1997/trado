@@ -106,9 +106,12 @@ class UpstoxMarketDataProvider(BaseMarketDataProvider):
 
 
     def _get_headers(self) -> Dict[str, str]:
+        token = (self.access_token or "").strip()
+        if token.lower().startswith("bearer "):
+            token = token[7:].strip()
         return {
             "Accept": "application/json",
-            "Authorization": f"Bearer {self.access_token}",
+            "Authorization": f"Bearer {token}",
         }
 
     def _get_instrument_key(self, instrument: str) -> str:

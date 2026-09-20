@@ -355,12 +355,15 @@ async def get_broker_status():
     Returns live broker connection health, authenticated user profile, and funds summary.
     """
     from app.config import settings
-    from app.services.market_data.factory import get_market_data_provider
+    from app.services.market_data.factory import get_market_data_provider, set_market_data_provider
 
     provider = get_market_data_provider()
-    is_upstox = settings.MARKET_DATA_PROVIDER.upper() == "UPSTOX"
 
-    if is_upstox and hasattr(provider, "get_user_profile"):
+    # If provider is not Upstox but token is present, switch it to Upstox
+    if not hasattr(provider, "get_user_profile") and settings.UPSTOX_ACCESS_TOKEN:
+        provider = set_market_data_provider("UPSTOX", access_token=settings.UPSTOX_ACCESS_TOKEN)
+
+    if hasattr(provider, "get_user_profile"):
         profile = await provider.get_user_profile()
         funds = await provider.get_funds_and_margin()
         token_expired = profile.get("token_expired", False)
@@ -400,37 +403,54 @@ async def update_broker_token(payload: dict):
             detail="Invalid or empty Upstox access token provided.",
         )
 
-    from app.config import settings
     clean_token = token.strip()
-    settings.UPSTOX_ACCESS_TOKEN = clean_token
+    # Auto-strip 'Bearer ' or 'bearer ' if user copied it along with token
+    if clean_token.lower().startswith("bearer "):
+        clean_token = clean_token[7:].strip()
 
-    # Also persist to backend/.env
-    import os
+    from app.config import settings
+    settings.UPSTOX_ACCESS_TOKEN = clean_token
+    settings.MARKET_DATA_PROVIDER = "UPSTOX"
+
+    # Reset & instantiate Upstox provider with the new token
+    from app.services.market_data.factory import set_market_data_provider
+    provider = set_market_data_provider("UPSTOX", access_token=clean_token)
+
+    # Persist to .env if possible
     import re
     from pathlib import Path
     try:
-        env_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
-        if env_path.exists():
-            text = env_path.read_text(encoding="utf-8")
-            if "UPSTOX_ACCESS_TOKEN" in text:
-                text = re.sub(r'UPSTOX_ACCESS_TOKEN=".*?"', f'UPSTOX_ACCESS_TOKEN="{clean_token}"', text)
-            else:
-                text += f'\nUPSTOX_ACCESS_TOKEN="{clean_token}"\n'
-            env_path.write_text(text, encoding="utf-8")
+        for p in [Path(__file__).resolve().parent.parent.parent.parent / ".env", Path(".env"), Path("backend/.env")]:
+            if p.exists():
+                text = p.read_text(encoding="utf-8")
+                if "UPSTOX_ACCESS_TOKEN" in text:
+                    text = re.sub(r'UPSTOX_ACCESS_TOKEN=".*?"', f'UPSTOX_ACCESS_TOKEN="{clean_token}"', text)
+                else:
+                    text += f'\nUPSTOX_ACCESS_TOKEN="{clean_token}"\n'
+                p.write_text(text, encoding="utf-8")
+                break
     except Exception as e:
         logger.warning(f"Could not persist token to .env: {e}")
 
-    # Reset in provider
-    from app.services.market_data.factory import get_market_data_provider
-    provider = get_market_data_provider()
-    if hasattr(provider, "access_token"):
-        provider.access_token = clean_token
-        provider.cached_profile = None
-        provider._last_profile_fetch = None
+    # Immediately verify token with Upstox API
+    profile = await provider.get_user_profile()
+    token_expired = profile.get("token_expired", False)
+    if token_expired:
+        error_msg = profile.get("error") or "Upstox rejected this token (HTTP 401). The token may have expired or is invalid for today's session."
+        return {
+            "success": False,
+            "connected": False,
+            "token_valid": False,
+            "message": error_msg,
+            "profile": profile,
+        }
 
     return {
         "success": True,
-        "message": "Upstox Access Token updated successfully. Market feed reconnected.",
+        "connected": True,
+        "token_valid": True,
+        "message": f"Successfully connected to Upstox as {profile.get('user_name', 'User')} ({profile.get('user_id', '')})",
+        "profile": profile,
     }
 
 

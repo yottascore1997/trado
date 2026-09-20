@@ -47,12 +47,12 @@ export const SystemStatusBar: React.FC = () => {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        setUpdateMsg({ type: "success", text: "Token updated! Reconnected to Upstox." });
+        setUpdateMsg({ type: "success", text: data.message || "Token updated! Reconnected to Upstox." });
         setNewToken("");
         fetchStatus();
-        setTimeout(() => setShowModal(false), 1500);
+        setTimeout(() => setShowModal(false), 2000);
       } else {
-        setUpdateMsg({ type: "error", text: data.detail || "Invalid token format." });
+        setUpdateMsg({ type: "error", text: data.message || data.detail || "Invalid token format." });
       }
     } catch (err: any) {
       setUpdateMsg({ type: "error", text: err.message || "Network error" });
