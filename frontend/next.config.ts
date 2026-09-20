@@ -7,7 +7,9 @@ const nextConfig: NextConfig = {
     root: path.resolve(__dirname),
   },
   async rewrites() {
-    const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const backendUrl =
+      process.env.NEXT_PUBLIC_API_URL ||
+      "https://trado-production-0011.up.railway.app";
     return [
       {
         source: "/api/v1/:path*",
