@@ -1,8 +1,8 @@
 {
-  "wallet_budget": 50000.0,
-  "available_balance": 50000.0,
+  "wallet_budget": 100000.0,
+  "available_balance": 100000.0,
   "margin_locked": 0,
-  "auto_trading_enabled": false,
+  "auto_trading_enabled": true,
   "open_positions": [],
   "closed_trades": [
     {
@@ -718,5 +718,5 @@
       "trailing_stage": "INITIAL"
     }
   ],
-  "last_updated": "2026-09-21T04:51:35.029274+00:00"
+  "last_updated": "2026-09-21T07:27:26.134171+00:00"
 }
