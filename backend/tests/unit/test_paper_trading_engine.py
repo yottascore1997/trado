@@ -329,8 +329,8 @@ def test_auto_square_off_at_three_fifteen_pm():
 
 def test_thesis_invalidation_buy_early_exit():
     """
-    Validates that if a BUY position loses VWAP support while underwater,
-    it executes an early exit (THESIS_INVALIDATED) rather than waiting for full SL hit.
+    Validates that if a BUY position loses VWAP support beyond 0.20% buffer while underwater,
+    it requires 2 consecutive ticks to confirm thesis invalidation and execute an early exit.
     """
     engine = PaperTradingEngine(initial_budget=10000.0, persist=False)
     pos = engine.open_position(
@@ -345,31 +345,37 @@ def test_thesis_invalidation_buy_early_exit():
     )
     assert len(engine.open_positions) == 1
 
-    # Price drops to 186.80: Below VWAP 187.10 and below Entry 187.40, but above SL 186.11
+    # Price drops to 186.50: Below VWAP 187.10 (beyond 0.20% buffer: 187.10 - 0.37 = 186.73)
+    # and below Entry 187.40, but above SL 186.11
     quotes = {
         "NSE_EQ:TATASTEEL": {
-            "last_price": 186.80,
+            "last_price": 186.50,
             "average_price": 187.10,
-            "ohlc": {"open": 187.0, "high": 187.5, "low": 186.5, "close": 186.8},
+            "ohlc": {"open": 187.0, "high": 187.5, "low": 186.4, "close": 186.5},
         }
     }
-    engine.process_market_tick(quotes)
 
-    # Must be closed via THESIS_INVALIDATED
+    # Tick 1: First breach logged as warning, position remains open (noise protection)
+    engine.process_market_tick(quotes)
+    assert len(engine.open_positions) == 1
+    assert engine.open_positions[0]["vwap_breach_count"] == 1
+
+    # Tick 2: Second consecutive breach confirms thesis invalidation and triggers early exit
+    engine.process_market_tick(quotes)
     assert len(engine.open_positions) == 0
     trade = engine.closed_trades[-1]
     assert trade["symbol"] == "TATASTEEL"
     assert trade["exit_reason"] == "THESIS_INVALIDATED"
-    assert trade["exit_price"] == 186.80
-    # Early exit loss is -₹60, saving the trader from -₹129 full SL loss!
-    assert trade["gross_pnl"] == round((186.80 - 187.40) * 100, 2)
+    assert trade["exit_price"] == 186.50
+    # Early exit loss is -₹90, saving the trader from -₹129 full SL loss!
+    assert trade["gross_pnl"] == round((186.50 - 187.40) * 100, 2)
     assert abs(trade["gross_pnl"]) < abs((186.11 - 187.40) * 100)
 
 
 def test_thesis_invalidation_sell_early_exit():
     """
-    Validates that if a SELL position's price climbs back above VWAP resistance while underwater,
-    it executes an early exit (THESIS_INVALIDATED) rather than waiting for full SL hit.
+    Validates that if a SELL position's price climbs back above VWAP resistance beyond 0.20% buffer
+    while underwater, it requires 2 consecutive ticks to confirm thesis invalidation and execute an early exit.
     """
     engine = PaperTradingEngine(initial_budget=10000.0, persist=False)
     pos = engine.open_position(
@@ -384,7 +390,8 @@ def test_thesis_invalidation_sell_early_exit():
     )
     assert len(engine.open_positions) == 1
 
-    # Price rises to 1505.0: Above VWAP 1495.0 and above Entry 1500.0, but well below SL 1520.0
+    # Price rises to 1505.0: Above VWAP 1495.0 (beyond 0.20% buffer: 1495 + 2.99 = 1497.99)
+    # and above Entry 1500.0, but well below SL 1520.0
     quotes = {
         "NSE_EQ:INFY": {
             "last_price": 1505.0,
@@ -392,9 +399,14 @@ def test_thesis_invalidation_sell_early_exit():
             "ohlc": {"open": 1495.0, "high": 1510.0, "low": 1490.0, "close": 1505.0},
         }
     }
-    engine.process_market_tick(quotes)
 
-    # Must be closed via THESIS_INVALIDATED
+    # Tick 1: First breach logged as warning, position remains open
+    engine.process_market_tick(quotes)
+    assert len(engine.open_positions) == 1
+    assert engine.open_positions[0]["vwap_breach_count"] == 1
+
+    # Tick 2: Second consecutive breach confirms thesis invalidation and triggers early exit
+    engine.process_market_tick(quotes)
     assert len(engine.open_positions) == 0
     trade = engine.closed_trades[-1]
     assert trade["symbol"] == "INFY"

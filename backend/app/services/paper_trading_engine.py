@@ -228,10 +228,31 @@ class PaperTradingEngine:
                         stage = pos.get("trailing_stage", "INITIAL")
                         reason = "TRAILING_SL_HIT" if stage == "PROFIT_LOCK" else ("BREAKEVEN_EXIT" if stage == "BREAKEVEN" else "STOP_LOSS_HIT")
                         positions_to_close.append((pos["position_id"], reason, current_price))
-                    elif curr_vwap > 0 and current_price < curr_vwap and current_price < entry:
-                        # ⚡ Thesis Invalidation: Price lost VWAP anchor while in loss (cut loss early before full SL)
-                        logger.info(f"⚡ [THESIS INVALIDATED] {sym}: Price ₹{current_price} broke below VWAP ₹{curr_vwap} while underwater (Entry ₹{entry}). Executing early exit.")
-                        positions_to_close.append((pos["position_id"], "THESIS_INVALIDATED", current_price))
+                    elif curr_vwap > 0:
+                        # ⚡ Thesis Invalidation: Price lost VWAP anchor while in loss
+                        # Requires:
+                        # 1. Price is below VWAP by at least the buffer (0.20% / 20 bps)
+                        # 2. Price is below entry (underwater)
+                        # 3. Breach confirmation: Requires 2 consecutive ticks below threshold to filter out single-tick wick spikes
+                        vwap_buffer = max(0.10, round(curr_vwap * 0.0020, 2))
+                        threshold = round(curr_vwap - vwap_buffer, 2)
+                        if current_price < threshold and current_price < entry:
+                            breach_count = pos.get("vwap_breach_count", 0) + 1
+                            pos["vwap_breach_count"] = breach_count
+                            if breach_count >= 2:
+                                logger.info(
+                                    f"⚡ [THESIS INVALIDATED] {sym}: Price ₹{current_price} confirmed below VWAP ₹{curr_vwap} "
+                                    f"(buffer ₹{vwap_buffer}, threshold ₹{threshold}, breaches: {breach_count}) while underwater (Entry ₹{entry}). "
+                                    f"Executing early exit."
+                                )
+                                positions_to_close.append((pos["position_id"], "THESIS_INVALIDATED", current_price))
+                            else:
+                                logger.debug(
+                                    f"⚠️ [VWAP BREACH WARNING] {sym}: Price ₹{current_price} breached VWAP threshold ₹{threshold} "
+                                    f"(breach {breach_count}/2). Awaiting confirmation."
+                                )
+                        else:
+                            pos["vwap_breach_count"] = 0
 
                 elif side == "SELL":
                     pnl = round((entry - current_price) * qty, 2)
@@ -277,10 +298,31 @@ class PaperTradingEngine:
                         stage = pos.get("trailing_stage", "INITIAL")
                         reason = "TRAILING_SL_HIT" if stage == "PROFIT_LOCK" else ("BREAKEVEN_EXIT" if stage == "BREAKEVEN" else "STOP_LOSS_HIT")
                         positions_to_close.append((pos["position_id"], reason, current_price))
-                    elif curr_vwap > 0 and current_price > curr_vwap and current_price > entry:
-                        # ⚡ Thesis Invalidation: Price reclaimed VWAP resistance while in loss (cut loss early before full SL)
-                        logger.info(f"⚡ [THESIS INVALIDATED] {sym}: Price ₹{current_price} climbed above VWAP ₹{curr_vwap} while underwater (Entry ₹{entry}). Executing early exit.")
-                        positions_to_close.append((pos["position_id"], "THESIS_INVALIDATED", current_price))
+                    elif curr_vwap > 0:
+                        # ⚡ Thesis Invalidation: Price reclaimed VWAP resistance with buffer (0.20%) while in loss
+                        # Requires:
+                        # 1. Price is above VWAP by at least the buffer (0.20% / 20 bps)
+                        # 2. Price is above entry (underwater)
+                        # 3. Breach confirmation: Requires 2 consecutive ticks above threshold to filter out single-tick wick spikes
+                        vwap_buffer = max(0.10, round(curr_vwap * 0.0020, 2))
+                        threshold = round(curr_vwap + vwap_buffer, 2)
+                        if current_price > threshold and current_price > entry:
+                            breach_count = pos.get("vwap_breach_count", 0) + 1
+                            pos["vwap_breach_count"] = breach_count
+                            if breach_count >= 2:
+                                logger.info(
+                                    f"⚡ [THESIS INVALIDATED] {sym}: Price ₹{current_price} confirmed above VWAP ₹{curr_vwap} "
+                                    f"(buffer ₹{vwap_buffer}, threshold ₹{threshold}, breaches: {breach_count}) while underwater (Entry ₹{entry}). "
+                                    f"Executing early exit."
+                                )
+                                positions_to_close.append((pos["position_id"], "THESIS_INVALIDATED", current_price))
+                            else:
+                                logger.debug(
+                                    f"⚠️ [VWAP BREACH WARNING] {sym}: Price ₹{current_price} breached VWAP resistance threshold ₹{threshold} "
+                                    f"(breach {breach_count}/2). Awaiting confirmation."
+                                )
+                        else:
+                            pos["vwap_breach_count"] = 0
 
             elif is_square_off_time:
                 # 3:15 PM auto square off even if quote not received on this exact tick
@@ -496,6 +538,7 @@ class PaperTradingEngine:
             "highest_price": round(entry_price, 2),
             "lowest_price": round(entry_price, 2),
             "trailing_stage": "INITIAL",
+            "vwap_breach_count": 0,
             "margin_required": round(margin_required, 2),
             "unrealized_pnl": 0.0,
             "pnl_pct": 0.0,
