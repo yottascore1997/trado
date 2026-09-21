@@ -969,6 +969,7 @@ class StockScreenerService:
                 low_p = float(ohlc.get("low", price))
                 close_p = float(ohlc.get("close", price))
                 net_change = float(quote.get("net_change") or round(price - open_p, 2))
+                change_pct = round((net_change / max(open_p, 1.0)) * 100, 2)
                 # Real exchange VWAP from Upstox (average_price) if available, fallback to typical price
                 vwap = float(quote.get("average_price") or quote.get("vwap") or round((open_p + high_p + low_p + price) / 4.0, 2))
                 day_range = max(high_p - low_p, price * 0.008)
@@ -984,6 +985,7 @@ class StockScreenerService:
                 orb_low = round(low_p, 2)
                 orb_buffer = round(price * 0.0010, 2)
                 is_orb_breakout = (price >= (orb_high - orb_buffer)) and (high_p - low_p > 0)
+                is_orb_breakdown = (price <= (orb_low + orb_buffer)) and (high_p - low_p > 0)
                 # 3. 0.10% VWAP Breakout Buffer (ensures genuine breakout, not chop on top of VWAP)
                 vwap_entry_buffer = round(vwap * 0.0010, 2)
 
