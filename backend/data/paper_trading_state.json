@@ -12,7 +12,7 @@
       "entry_price": 1240.5,
       "current_price": 1241.7,
       "entry_vwap": 1238.19,
-      "current_vwap": 1238.22,
+      "current_vwap": 1238.23,
       "initial_stop_loss": 1233.06,
       "stop_loss": 1233.06,
       "target_price": 1256.12,
@@ -28,7 +28,7 @@
       "product_type": "MIS",
       "source": "UPSTOX_LIVE",
       "entry_time": "2026-09-21T07:49:43.888868+00:00",
-      "last_updated": "2026-09-21T07:53:34.971312+00:00"
+      "last_updated": "2026-09-21T07:56:28.830358+00:00"
     },
     {
       "position_id": "POS-EFDBF6AC",
@@ -36,7 +36,7 @@
       "side": "SELL",
       "quantity": 679,
       "entry_price": 184.0,
-      "current_price": 183.87,
+      "current_price": 183.95,
       "entry_vwap": 185.19,
       "current_vwap": 185.18,
       "initial_stop_loss": 185.38,
@@ -47,14 +47,14 @@
       "trailing_stage": "INITIAL",
       "vwap_breach_count": 0,
       "margin_required": 24987.2,
-      "unrealized_pnl": 88.27,
-      "pnl_pct": 0.07,
+      "unrealized_pnl": 33.95,
+      "pnl_pct": 0.03,
       "setup_type": "Upstox Live VWAP Breakdown & Rejection",
       "setup_tier": "A",
       "product_type": "MIS",
       "source": "UPSTOX_LIVE",
       "entry_time": "2026-09-21T07:49:43.889905+00:00",
-      "last_updated": "2026-09-21T07:53:34.971324+00:00"
+      "last_updated": "2026-09-21T07:56:28.830370+00:00"
     },
     {
       "position_id": "POS-A3EA7CBE",
@@ -62,7 +62,7 @@
       "side": "BUY",
       "quantity": 92,
       "entry_price": 1345.6,
-      "current_price": 1344.2,
+      "current_price": 1344.9,
       "entry_vwap": 1344.08,
       "current_vwap": 1344.1,
       "initial_stop_loss": 1337.53,
@@ -73,14 +73,14 @@
       "trailing_stage": "INITIAL",
       "vwap_breach_count": 0,
       "margin_required": 24759.04,
-      "unrealized_pnl": -128.8,
-      "pnl_pct": -0.1,
+      "unrealized_pnl": -64.4,
+      "pnl_pct": -0.05,
       "setup_type": "Upstox Live VWAP Breakout & Retest",
       "setup_tier": "A",
       "product_type": "MIS",
       "source": "UPSTOX_LIVE",
       "entry_time": "2026-09-21T07:49:43.890766+00:00",
-      "last_updated": "2026-09-21T07:53:34.971332+00:00"
+      "last_updated": "2026-09-21T07:56:28.830377+00:00"
     }
   ],
   "closed_trades": [
@@ -797,5 +797,5 @@
       "trailing_stage": "INITIAL"
     }
   ],
-  "last_updated": "2026-09-21T07:53:39.087285+00:00"
+  "last_updated": "2026-09-21T07:56:32.950258+00:00"
 }
