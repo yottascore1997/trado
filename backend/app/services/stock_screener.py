@@ -969,8 +969,8 @@ class StockScreenerService:
                 low_p = float(ohlc.get("low", price))
                 close_p = float(ohlc.get("close", price))
                 net_change = float(quote.get("net_change") or round(price - open_p, 2))
-                change_pct = round((net_change / max(open_p, 1.0)) * 100, 2)
-                vwap = round((open_p + high_p + low_p + price) / 4.0, 2)
+                # Real exchange VWAP from Upstox (average_price) if available, fallback to typical price
+                vwap = float(quote.get("average_price") or quote.get("vwap") or round((open_p + high_p + low_p + price) / 4.0, 2))
                 day_range = max(high_p - low_p, price * 0.008)
                 atr = round(day_range, 2)
 
@@ -984,9 +984,10 @@ class StockScreenerService:
                 orb_low = round(low_p, 2)
                 orb_buffer = round(price * 0.0010, 2)
                 is_orb_breakout = (price >= (orb_high - orb_buffer)) and (high_p - low_p > 0)
-                is_orb_breakdown = (price <= (orb_low + orb_buffer)) and (high_p - low_p > 0)
+                # 3. 0.10% VWAP Breakout Buffer (ensures genuine breakout, not chop on top of VWAP)
+                vwap_entry_buffer = round(vwap * 0.0010, 2)
 
-                if change_pct >= 0 and price >= vwap:
+                if change_pct >= 0 and price >= (vwap + vwap_entry_buffer):
                     signal = "BUY"
                     trend_5m = "BULLISH"
                     trend_15m = "BULLISH"
@@ -999,7 +1000,7 @@ class StockScreenerService:
                     ai_score = min(95, int(78 + abs(change_pct) * 4 + (rvol - 1.0) * 6))
                     ema_9 = round(price - day_range * 0.15, 2)
                     ema_20 = round(price - day_range * 0.35, 2)
-                elif change_pct < 0 and price < vwap:
+                elif change_pct < 0 and price <= (vwap - vwap_entry_buffer):
                     signal = "SELL"
                     trend_5m = "BEARISH"
                     trend_15m = "BEARISH"

@@ -232,18 +232,21 @@ class PaperTradingEngine:
                         # ⚡ Thesis Invalidation: Price lost VWAP anchor while in loss
                         # Requires:
                         # 1. Price is below VWAP by at least the buffer (0.20% / 20 bps)
-                        # 2. Price is below entry (underwater)
+                        # 2. Price has moved meaningfully against entry (at least 25% of SL distance or 0.25% of entry)
+                        #    This prevents premature micro-exits (e.g. 8 paise loss) that burn capital on charges
                         # 3. Breach confirmation: Requires 2 consecutive ticks below threshold to filter out single-tick wick spikes
                         vwap_buffer = max(0.10, round(curr_vwap * 0.0020, 2))
                         threshold = round(curr_vwap - vwap_buffer, 2)
-                        if current_price < threshold and current_price < entry:
+                        sl_dist = abs(entry - pos["stop_loss"])
+                        min_underwater_dist = max(0.20, round(max(entry * 0.0025, sl_dist * 0.25), 2))
+                        if current_price < threshold and (entry - current_price) >= min_underwater_dist:
                             breach_count = pos.get("vwap_breach_count", 0) + 1
                             pos["vwap_breach_count"] = breach_count
                             if breach_count >= 2:
                                 logger.info(
                                     f"⚡ [THESIS INVALIDATED] {sym}: Price ₹{current_price} confirmed below VWAP ₹{curr_vwap} "
-                                    f"(buffer ₹{vwap_buffer}, threshold ₹{threshold}, breaches: {breach_count}) while underwater (Entry ₹{entry}). "
-                                    f"Executing early exit."
+                                    f"(buffer ₹{vwap_buffer}, threshold ₹{threshold}, loss: ₹{round(entry - current_price, 2)} >= ₹{min_underwater_dist}) "
+                                    f"while underwater (Entry ₹{entry}). Executing early exit."
                                 )
                                 positions_to_close.append((pos["position_id"], "THESIS_INVALIDATED", current_price))
                             else:
@@ -302,18 +305,21 @@ class PaperTradingEngine:
                         # ⚡ Thesis Invalidation: Price reclaimed VWAP resistance with buffer (0.20%) while in loss
                         # Requires:
                         # 1. Price is above VWAP by at least the buffer (0.20% / 20 bps)
-                        # 2. Price is above entry (underwater)
+                        # 2. Price has moved meaningfully against entry (at least 25% of SL distance or 0.25% of entry)
+                        #    This prevents premature micro-exits (e.g. 8 paise loss) that burn capital on charges
                         # 3. Breach confirmation: Requires 2 consecutive ticks above threshold to filter out single-tick wick spikes
                         vwap_buffer = max(0.10, round(curr_vwap * 0.0020, 2))
                         threshold = round(curr_vwap + vwap_buffer, 2)
-                        if current_price > threshold and current_price > entry:
+                        sl_dist = abs(entry - pos["stop_loss"])
+                        min_underwater_dist = max(0.20, round(max(entry * 0.0025, sl_dist * 0.25), 2))
+                        if current_price > threshold and (current_price - entry) >= min_underwater_dist:
                             breach_count = pos.get("vwap_breach_count", 0) + 1
                             pos["vwap_breach_count"] = breach_count
                             if breach_count >= 2:
                                 logger.info(
                                     f"⚡ [THESIS INVALIDATED] {sym}: Price ₹{current_price} confirmed above VWAP ₹{curr_vwap} "
-                                    f"(buffer ₹{vwap_buffer}, threshold ₹{threshold}, breaches: {breach_count}) while underwater (Entry ₹{entry}). "
-                                    f"Executing early exit."
+                                    f"(buffer ₹{vwap_buffer}, threshold ₹{threshold}, loss: ₹{round(current_price - entry, 2)} >= ₹{min_underwater_dist}) "
+                                    f"while underwater (Entry ₹{entry}). Executing early exit."
                                 )
                                 positions_to_close.append((pos["position_id"], "THESIS_INVALIDATED", current_price))
                             else:
