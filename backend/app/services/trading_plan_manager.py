@@ -30,6 +30,7 @@ class TradingPlanManager:
         self._plan = {
             "wallet_budget": 10000.0,
             "trading_mode": "INTRADAY_STOCKS",
+            "trading_modes": ["INTRADAY_STOCKS"],
             "risk_per_trade_pct": 1.5,
             "max_daily_loss_pct": 3.0,
             "max_active_trades": 2,
@@ -49,6 +50,9 @@ class TradingPlanManager:
                     saved = json.load(f)
                     if isinstance(saved, dict):
                         self._plan.update(saved)
+                        if "trading_modes" not in self._plan:
+                            raw_mode = self._plan.get("trading_mode", "INTRADAY_STOCKS")
+                            self._plan["trading_modes"] = [m.strip() for m in raw_mode.split(",") if m.strip()]
                         logger.info(f"Loaded persistent trading plan: budget=Rs.{self._plan.get('wallet_budget')}")
         except Exception as e:
             logger.warning(f"Could not load persisted trading plan: {e}")
@@ -67,69 +71,151 @@ class TradingPlanManager:
         return dict(self._plan)
 
     def calculate_metrics(self) -> WalletMetrics:
-        budget = self._plan["wallet_budget"]
-        mode = self._plan["trading_mode"]
-        risk_pct = self._plan["risk_per_trade_pct"]
-        daily_loss_pct = self._plan["max_daily_loss_pct"]
+        budget = float(self._plan["wallet_budget"])
+        raw_mode = self._plan.get("trading_mode", "INTRADAY_STOCKS")
+        modes_list = self._plan.get("trading_modes")
 
-        if mode == "INTRADAY_STOCKS":
-            leverage = 5.0
-            product_type = "MIS"
-            square_off = True
-            mode_desc = "Intraday Cash Equities (5x Leverage, Auto 3:15 PM Square-off)"
-            max_active = 2 if budget <= 25000.0 else (3 if budget <= 50000.0 else 4)
-            alloc_per_stock = budget / max_active
-        elif mode == "BANKNIFTY_OPTIONS":
-            leverage = 1.0
-            product_type = "MIS"
-            square_off = True
-            mode_desc = "Bank Nifty Index Options (1 Lot ATM, Strict 20pt Stop-Loss)"
-            max_active = 1
-            alloc_per_stock = budget
-        elif mode == "NIFTY_OPTIONS":
-            leverage = 1.0
-            product_type = "MIS"
-            square_off = True
-            mode_desc = "NIFTY 50 Index Options (1 Lot ATM, Tight 10pt Stop-Loss)"
-            max_active = 1
-            alloc_per_stock = budget
-        elif mode == "SWING_TRADING":
-            leverage = 1.0
-            product_type = "CNC"
-            square_off = False
-            mode_desc = "Cash Delivery Swing Portfolio (Multi-Day Hold, Zero Square-Off Penalty)"
-            max_active = 2 if budget <= 25000.0 else 3
-            alloc_per_stock = budget / max_active
-        else:
-            leverage = 1.0
-            product_type = "MIS"
-            square_off = True
-            mode_desc = "Standard Trading Mode"
-            max_active = 1
-            alloc_per_stock = budget
+        if not modes_list:
+            if "," in raw_mode:
+                modes_list = [m.strip() for m in raw_mode.split(",") if m.strip()]
+            else:
+                modes_list = [raw_mode]
 
-        buying_power = budget * leverage
+        VALID_MODES = ["INTRADAY_STOCKS", "BANKNIFTY_OPTIONS", "NIFTY_OPTIONS", "SWING_TRADING"]
+        active_modes = [m for m in modes_list if m in VALID_MODES]
+        if not active_modes:
+            active_modes = ["INTRADAY_STOCKS"]
+
+        risk_pct = float(self._plan.get("risk_per_trade_pct", 1.5))
+        daily_loss_pct = float(self._plan.get("max_daily_loss_pct", 3.0))
+
+        mode_allocations = {}
+        total_buying_power = 0.0
+        total_max_active = 0
+        has_mis = False
+        has_cnc = False
+        any_square_off = False
+
+        for mode in active_modes:
+            if mode == "INTRADAY_STOCKS":
+                m_leverage = 5.0
+                m_product = "MIS"
+                m_square_off = True
+                m_name = "Intraday Stocks"
+                m_desc = "Intraday Cash Equities (5x Leverage, Auto 3:15 PM Square-off)"
+                m_max_active = 2 if budget <= 25000.0 else (3 if budget <= 50000.0 else 4)
+                m_alloc_per_stock = budget / m_max_active
+            elif mode == "BANKNIFTY_OPTIONS":
+                m_leverage = 1.0
+                m_product = "MIS"
+                m_square_off = True
+                m_name = "Bank Nifty Options"
+                m_desc = "Bank Nifty Index Options (1 Lot ATM, Strict 20pt Stop-Loss)"
+                m_max_active = 1
+                m_alloc_per_stock = budget
+            elif mode == "NIFTY_OPTIONS":
+                m_leverage = 1.0
+                m_product = "MIS"
+                m_square_off = True
+                m_name = "NIFTY 50 Options"
+                m_desc = "NIFTY 50 Index Options (1 Lot ATM, Tight 10pt Stop-Loss)"
+                m_max_active = 1
+                m_alloc_per_stock = budget
+            elif mode == "SWING_TRADING":
+                m_leverage = 1.0
+                m_product = "CNC"
+                m_square_off = False
+                m_name = "Swing Delivery"
+                m_desc = "Cash Delivery Swing Portfolio (Multi-Day Hold, Zero Square-Off Penalty)"
+                m_max_active = 2 if budget <= 25000.0 else 3
+                m_alloc_per_stock = budget / m_max_active
+            else:
+                m_leverage = 1.0
+                m_product = "MIS"
+                m_square_off = True
+                m_name = mode
+                m_desc = "Standard Trading Mode"
+                m_max_active = 1
+                m_alloc_per_stock = budget
+
+            m_buying_power = budget * m_leverage
+            total_buying_power += m_buying_power
+            total_max_active += m_max_active
+            if m_product == "MIS":
+                has_mis = True
+            if m_product == "CNC":
+                has_cnc = True
+            if m_square_off:
+                any_square_off = True
+
+            mode_allocations[mode] = {
+                "mode": mode,
+                "name": m_name,
+                "budget": budget,
+                "leverage": m_leverage,
+                "effective_buying_power": m_buying_power,
+                "product_type": m_product,
+                "square_off_mandatory": m_square_off,
+                "max_active_trades": m_max_active,
+                "allocation_per_stock_max": round(m_alloc_per_stock, 2),
+                "risk_per_trade_in_rs": round(budget * (risk_pct / 100.0), 2),
+                "daily_loss_limit_in_rs": round(budget * (daily_loss_pct / 100.0), 2),
+                "description": m_desc,
+            }
+
+        total_allocated_capital = budget * len(active_modes)
+        eff_leverage = round(total_buying_power / total_allocated_capital, 2) if total_allocated_capital > 0 else 1.0
         risk_rs = round(budget * (risk_pct / 100.0), 2)
-        daily_loss_rs = round(budget * (daily_loss_pct / 100.0), 2)
+        daily_loss_rs = round(total_allocated_capital * (daily_loss_pct / 100.0), 2)
+
+        if has_mis and has_cnc:
+            overall_product = "MIS & CNC"
+        elif has_cnc:
+            overall_product = "CNC"
+        else:
+            overall_product = "MIS"
+
+        if len(active_modes) == 1:
+            m_info = mode_allocations[active_modes[0]]
+            mode_desc = m_info["description"]
+            alloc_per_stock = m_info["allocation_per_stock_max"]
+        else:
+            names = [mode_allocations[m]["name"] for m in active_modes]
+            mode_desc = f"Multi-Segment Active: {', '.join(names)} (₹{budget:,.0f} per segment)"
+            alloc_per_stock = budget / max(1, total_max_active)
 
         return WalletMetrics(
             wallet_budget=budget,
-            effective_buying_power=buying_power,
-            leverage_multiplier=leverage,
+            effective_buying_power=round(total_buying_power, 2),
+            leverage_multiplier=eff_leverage,
             risk_per_trade_in_rs=risk_rs,
             daily_loss_limit_in_rs=daily_loss_rs,
-            max_active_trades=max_active,
+            max_active_trades=total_max_active,
             allocation_per_stock_max=round(alloc_per_stock, 2),
             mode_description=mode_desc,
-            product_type=product_type,
-            square_off_mandatory=square_off,
+            product_type=overall_product,
+            square_off_mandatory=any_square_off,
             kill_switch_active=self._plan["kill_switch_active"],
+            active_modes=active_modes,
+            mode_allocations=mode_allocations,
+            total_allocated_capital=round(total_allocated_capital, 2),
         )
 
     def update_plan(self, update_data: TradingPlanUpdate) -> TradingPlanOut:
         dump = update_data.model_dump(exclude_unset=True)
+        if "trading_modes" in dump and dump["trading_modes"]:
+            self._plan["trading_modes"] = dump["trading_modes"]
+            self._plan["trading_mode"] = ",".join(dump["trading_modes"])
+        elif "trading_mode" in dump and dump["trading_mode"]:
+            raw = dump["trading_mode"]
+            self._plan["trading_mode"] = raw
+            if "," in raw:
+                self._plan["trading_modes"] = [m.strip() for m in raw.split(",") if m.strip()]
+            else:
+                self._plan["trading_modes"] = [raw]
+
         for k, v in dump.items():
-            if v is not None:
+            if k not in ("trading_mode", "trading_modes") and v is not None:
                 self._plan[k] = v
 
         self._save_persisted_plan()
@@ -142,9 +228,11 @@ class TradingPlanManager:
             logger.debug(f"Sync paper engine budget: {e}")
 
         metrics = self.calculate_metrics()
+        active_modes = metrics.active_modes
         return TradingPlanOut(
             wallet_budget=self._plan["wallet_budget"],
             trading_mode=self._plan["trading_mode"],
+            trading_modes=active_modes,
             risk_per_trade_pct=self._plan["risk_per_trade_pct"],
             max_daily_loss_pct=self._plan["max_daily_loss_pct"],
             max_active_trades=metrics.max_active_trades,

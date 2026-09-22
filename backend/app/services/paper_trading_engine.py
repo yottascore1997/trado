@@ -220,7 +220,8 @@ class PaperTradingEngine:
                                 logger.info(f"🛡️ [BREAKEVEN] {sym}: SL trailed to Cost/Entry ₹{entry} (Capital Protected)")
 
                     # Check Exit Conditions
-                    if is_square_off_time:
+                    is_cnc = pos.get("product_type", "MIS") == "CNC" or pos.get("trade_type") == "SWING"
+                    if is_square_off_time and not is_cnc:
                         positions_to_close.append((pos["position_id"], "INTRADAY_SQUARE_OFF", current_price))
                     elif current_price >= target:
                         positions_to_close.append((pos["position_id"], "TARGET_HIT", current_price))
@@ -228,7 +229,7 @@ class PaperTradingEngine:
                         stage = pos.get("trailing_stage", "INITIAL")
                         reason = "TRAILING_SL_HIT" if stage == "PROFIT_LOCK" else ("BREAKEVEN_EXIT" if stage == "BREAKEVEN" else "STOP_LOSS_HIT")
                         positions_to_close.append((pos["position_id"], reason, current_price))
-                    elif curr_vwap > 0:
+                    elif curr_vwap > 0 and not is_cnc:
                         # ⚡ Thesis Invalidation: Price lost VWAP anchor while in loss
                         # Requires:
                         # 1. Price is below VWAP by at least the buffer (0.20% / 20 bps)
@@ -293,7 +294,8 @@ class PaperTradingEngine:
                                 logger.info(f"🛡️ [BREAKEVEN] {sym}: SL trailed to Cost/Entry ₹{entry} (Capital Protected)")
 
                     # Check Exit Conditions
-                    if is_square_off_time:
+                    is_cnc = pos.get("product_type", "MIS") == "CNC" or pos.get("trade_type") == "SWING"
+                    if is_square_off_time and not is_cnc:
                         positions_to_close.append((pos["position_id"], "INTRADAY_SQUARE_OFF", current_price))
                     elif current_price <= target:
                         positions_to_close.append((pos["position_id"], "TARGET_HIT", current_price))
@@ -301,7 +303,7 @@ class PaperTradingEngine:
                         stage = pos.get("trailing_stage", "INITIAL")
                         reason = "TRAILING_SL_HIT" if stage == "PROFIT_LOCK" else ("BREAKEVEN_EXIT" if stage == "BREAKEVEN" else "STOP_LOSS_HIT")
                         positions_to_close.append((pos["position_id"], reason, current_price))
-                    elif curr_vwap > 0:
+                    elif curr_vwap > 0 and not is_cnc:
                         # ⚡ Thesis Invalidation: Price reclaimed VWAP resistance with buffer (0.20%) while in loss
                         # Requires:
                         # 1. Price is above VWAP by at least the buffer (0.20% / 20 bps)
@@ -331,9 +333,11 @@ class PaperTradingEngine:
                             pos["vwap_breach_count"] = 0
 
             elif is_square_off_time:
-                # 3:15 PM auto square off even if quote not received on this exact tick
-                curr_px = pos.get("current_price", pos["entry_price"])
-                positions_to_close.append((pos["position_id"], "INTRADAY_SQUARE_OFF", curr_px))
+                # 3:15 PM auto square off even if quote not received on this exact tick (MIS only)
+                is_cnc = pos.get("product_type", "MIS") == "CNC" or pos.get("trade_type") == "SWING"
+                if not is_cnc:
+                    curr_px = pos.get("current_price", pos["entry_price"])
+                    positions_to_close.append((pos["position_id"], "INTRADAY_SQUARE_OFF", curr_px))
 
         # Close positions that hit Target, Trailing SL, Breakeven, Stop Loss, or 3:15 PM Square-off
         closed_ids = set()
@@ -483,9 +487,11 @@ class PaperTradingEngine:
             risk_based_qty = max(1, int(max_capital_risk / risk_per_share))
 
             # 3. Margin limit
+            prod_type = setup.get("product_type", "MIS")
+            eff_lev = 1.0 if prod_type == "CNC" else 5.0
             max_alloc = self.wallet_budget / max_active
             allowed_margin = min(self.available_balance, max_alloc)
-            margin_max_qty = max(1, int((allowed_margin * 5.0) / max(price, 1.0)))
+            margin_max_qty = max(1, int((allowed_margin * eff_lev) / max(price, 1.0)))
 
             # 4. Enforce strict quantity cap:
             # Must NEVER exceed risk_based_qty or margin_max_qty
@@ -493,7 +499,7 @@ class PaperTradingEngine:
             if final_qty <= 0:
                 continue
 
-            margin_req = round((final_qty * price) / 5.0, 2)
+            margin_req = round((final_qty * price) / eff_lev, 2)
 
             if margin_req <= self.available_balance and final_qty > 0:
                 self.open_position(
@@ -508,6 +514,7 @@ class PaperTradingEngine:
                     setup_tier=tier,
                     source=setup.get("source", "UPSTOX_LIVE"),
                     vwap=float(setup.get("vwap") or price),
+                    product_type=prod_type,
                 )
 
     def open_position(
@@ -523,6 +530,7 @@ class PaperTradingEngine:
         setup_tier: str = "A",
         source: str = "UPSTOX_LIVE",
         vwap: Optional[float] = None,
+        product_type: str = "MIS",
     ) -> Dict[str, Any]:
         """Creates and tracks a new open paper position."""
         pos_id = f"POS-{uuid.uuid4().hex[:8].upper()}"
@@ -550,7 +558,7 @@ class PaperTradingEngine:
             "pnl_pct": 0.0,
             "setup_type": setup_type,
             "setup_tier": setup_tier,
-            "product_type": "MIS",
+            "product_type": product_type,
             "source": source,
             "entry_time": now_iso,
             "last_updated": now_iso,

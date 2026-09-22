@@ -301,6 +301,7 @@ async def get_trading_plan():
     metrics = trading_plan_manager.calculate_metrics()
     return {
         **plan,
+        "trading_modes": metrics.active_modes,
         "metrics": metrics.model_dump(),
     }
 

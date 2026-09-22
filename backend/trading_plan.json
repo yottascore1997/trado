@@ -1,6 +1,10 @@
 {
   "wallet_budget": 100000.0,
-  "trading_mode": "INTRADAY_STOCKS",
+  "trading_mode": "INTRADAY_STOCKS,SWING_TRADING",
+  "trading_modes": [
+    "INTRADAY_STOCKS",
+    "SWING_TRADING"
+  ],
   "risk_per_trade_pct": 1.5,
   "max_daily_loss_pct": 3.0,
   "max_active_trades": 2,

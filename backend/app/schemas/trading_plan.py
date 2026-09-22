@@ -3,10 +3,14 @@ from pydantic import BaseModel, Field
 
 
 class TradingPlanBase(BaseModel):
-    wallet_budget: float = Field(default=10000.0, ge=1000.0, description="Isolated Virtual Wallet Budget in INR")
+    wallet_budget: float = Field(default=10000.0, ge=1000.0, description="Isolated Virtual Wallet Budget in INR per segment")
     trading_mode: str = Field(
         default="INTRADAY_STOCKS",
-        description="Active Mode: INTRADAY_STOCKS | BANKNIFTY_OPTIONS | NIFTY_OPTIONS | SWING_TRADING"
+        description="Active Mode(s): Comma-separated or primary mode string"
+    )
+    trading_modes: List[str] = Field(
+        default=["INTRADAY_STOCKS"],
+        description="List of active modes: INTRADAY_STOCKS, SWING_TRADING, BANKNIFTY_OPTIONS, NIFTY_OPTIONS"
     )
     risk_per_trade_pct: float = Field(default=1.5, ge=0.1, le=5.0, description="Risk per trade as % of wallet")
     max_daily_loss_pct: float = Field(default=3.0, ge=0.5, le=10.0, description="Daily stop-loss limit as % of wallet")
@@ -19,6 +23,7 @@ class TradingPlanBase(BaseModel):
 class TradingPlanUpdate(BaseModel):
     wallet_budget: Optional[float] = Field(None, ge=1000.0)
     trading_mode: Optional[str] = None
+    trading_modes: Optional[List[str]] = None
     risk_per_trade_pct: Optional[float] = Field(None, ge=0.1, le=5.0)
     max_daily_loss_pct: Optional[float] = Field(None, ge=0.5, le=10.0)
     max_active_trades: Optional[int] = Field(None, ge=1, le=10)
@@ -36,9 +41,12 @@ class WalletMetrics(BaseModel):
     max_active_trades: int
     allocation_per_stock_max: float
     mode_description: str
-    product_type: str  # MIS or CNC
+    product_type: str  # MIS or CNC (or "MIS / CNC" if multi-mode)
     square_off_mandatory: bool
     kill_switch_active: bool
+    active_modes: List[str] = Field(default_factory=lambda: ["INTRADAY_STOCKS"])
+    mode_allocations: Dict[str, Any] = Field(default_factory=dict)
+    total_allocated_capital: float = 10000.0
 
 
 class TradingPlanOut(TradingPlanBase):

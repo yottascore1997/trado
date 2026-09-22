@@ -916,23 +916,42 @@ class StockScreenerService:
         from app.services.trading_plan_manager import trading_plan_manager
 
         active_plan = trading_plan_manager.get_plan()
-        budget = wallet_budget if wallet_budget is not None else active_plan["wallet_budget"]
-        active_mode = mode if mode is not None else active_plan["trading_mode"]
-        active_risk_pct = risk_pct if risk_pct is not None else active_plan["risk_per_trade_pct"]
+        budget = wallet_budget if wallet_budget is not None else float(active_plan["wallet_budget"])
+        raw_mode = mode if mode is not None else active_plan.get("trading_modes") or active_plan.get("trading_mode", "INTRADAY_STOCKS")
+        if isinstance(raw_mode, list):
+            active_modes = raw_mode
+        elif isinstance(raw_mode, str) and "," in raw_mode:
+            active_modes = [m.strip() for m in raw_mode.split(",") if m.strip()]
+        elif isinstance(raw_mode, str):
+            active_modes = [raw_mode]
+        else:
+            active_modes = ["INTRADAY_STOCKS"]
 
-        # Calculate wallet metrics for active parameters
+        VALID_MODES = ["INTRADAY_STOCKS", "BANKNIFTY_OPTIONS", "NIFTY_OPTIONS", "SWING_TRADING"]
+        active_modes = [m for m in active_modes if m in VALID_MODES]
+        if not active_modes:
+            active_modes = ["INTRADAY_STOCKS"]
+
+        has_intraday = "INTRADAY_STOCKS" in active_modes
+        has_swing = "SWING_TRADING" in active_modes
+        has_bn = "BANKNIFTY_OPTIONS" in active_modes
+        has_nifty = "NIFTY_OPTIONS" in active_modes
+
+        active_risk_pct = risk_pct if risk_pct is not None else float(active_plan.get("risk_per_trade_pct", 1.5))
         max_capital_risk = round(budget * (active_risk_pct / 100.0), 2)
-        if active_mode == "INTRADAY_STOCKS":
+
+        # Baseline per-stock allocation & leverage
+        if has_intraday:
             max_active_stocks = 2 if budget <= 25000.0 else (3 if budget <= 50000.0 else 4)
             alloc_per_stock_max = budget / max_active_stocks
             leverage = 5.0
             prod_type = "MIS"
-        elif active_mode == "SWING_TRADING":
+        elif has_swing:
             max_active_stocks = 2 if budget <= 25000.0 else 3
             alloc_per_stock_max = budget / max_active_stocks
             leverage = 1.0
             prod_type = "CNC"
-        else:  # Options
+        else:  # Only Options
             max_active_stocks = 1
             alloc_per_stock_max = budget
             leverage = 1.0
@@ -1133,7 +1152,7 @@ class StockScreenerService:
             risk_based_qty = max(1, int(max_capital_risk / actual_risk_per_share))
 
             # 3. Margin Cap: Maximum quantity permissible by allocated capital & leverage
-            effective_leverage = 5.0 if active_mode == "INTRADAY_STOCKS" else 1.0
+            effective_leverage = 5.0 if has_intraday else 1.0
             max_buying_power = alloc_per_stock_max * effective_leverage
             margin_max_qty = max(1, int(max_buying_power / max(price, 0.05)))
 
@@ -1219,103 +1238,154 @@ class StockScreenerService:
         if not top_setups:
             top_setups = screened_stocks[:5]
 
-        # Mode Specific Overrides: If Bank Nifty or Nifty Options selected
-        if active_mode == "BANKNIFTY_OPTIONS":
+        # Top Setups Assembly with Multi-Mode Support
+        intraday_candidates = [dict(s) for s in candidates if s.get("is_eligible", True)]
+        if len(intraday_candidates) < 5:
+            remaining = [dict(s) for s in candidates if not s.get("is_eligible", True)]
+            intraday_candidates.extend(remaining[: 5 - len(intraday_candidates)])
+        if not intraday_candidates:
+            intraday_candidates = [dict(s) for s in screened_stocks if s["signal"] in ("BUY", "SELL") and s["ai_score"] >= 75][:5]
+        if not intraday_candidates:
+            intraday_candidates = [dict(s) for s in screened_stocks[:5]]
+
+        # Ensure Intraday candidates have MIS tags
+        for s in intraday_candidates:
+            s["product_type"] = "MIS"
+            s["setup_type"] = s.get("setup_type") or "Intraday Breakout"
+
+        # Generate Swing Delivery candidates (100% Cash, CNC, Multi-Day)
+        swing_alloc = budget / (2 if budget <= 25000.0 else 3)
+        swing_candidates = []
+        for s in intraday_candidates:
+            p = float(s.get("price") or 1.0)
+            sl_dist = abs(p - float(s.get("stop_loss", p * 0.985)))
+            risk_based_q = max(1, int(max_capital_risk / max(0.05, sl_dist)))
+            margin_q = max(1, int(swing_alloc / max(p, 0.05)))
+            sw_qty = max(1, min(risk_based_q, margin_q))
+            sw_margin = round(sw_qty * p, 2)
+            sw_entry = dict(s)
+            sw_entry["product_type"] = "CNC"
+            sw_entry["suggested_qty"] = sw_qty
+            sw_entry["margin_required"] = sw_margin
+            sw_entry["setup_type"] = "Swing Delivery (CNC)"
+            sw_entry["primary_reason"] = f"Cash Delivery Swing Setup (100% Cash, Multi-Day Hold within ₹{budget:,.0f} wallet)"
+            swing_candidates.append(sw_entry)
+
+        top_setups = []
+        if has_intraday and has_swing:
+            # Multi-mode: Deliver top 3 Intraday (MIS) and top 2 Swing (CNC) setups
+            top_setups.extend(intraday_candidates[:3])
+            top_setups.extend(swing_candidates[:2])
+        elif has_swing and not has_intraday:
+            # Swing Delivery only
+            top_setups.extend(swing_candidates[:5])
+        elif has_intraday:
+            # Intraday Stocks only
+            top_setups.extend(intraday_candidates[:5])
+
+        # Options Setups
+        option_setups = []
+        if has_bn:
             bn_atm_strike = round(bn_ltp / 100) * 100
             bn_premium = 285.0
             bn_lot = 15
             bn_risk_pts = 20.0
             bn_target_pts = 42.0
-            top_setups = [
-                {
-                    "symbol": f"BANKNIFTY {bn_atm_strike} CE",
-                    "name": f"Bank Nifty Weekly {bn_atm_strike} Call Option",
-                    "sector": "Index Options",
-                    "price": bn_premium,
-                    "change": 18.50,
-                    "change_pct": 6.94,
-                    "vwap": bn_premium - 8.0,
-                    "ema_9": bn_premium + 3.0,
-                    "ema_20": bn_premium - 4.0,
-                    "rvol": 2.40,
-                    "signal": "BUY",
-                    "ai_score": 92,
-                    "entry_price": bn_premium,
-                    "stop_loss": round(bn_premium - bn_risk_pts, 2),
-                    "target_price": round(bn_premium + bn_target_pts, 2),
-                    "risk_pts": bn_risk_pts,
-                    "reward_pts": bn_target_pts,
-                    "risk_reward": "1:2.1",
-                    "setup_type": "ATM Delta 0.50 Breakout",
-                    "index_aligned": True,
-                    "alignment_status": "ALIGNED_BULLISH",
-                    "suggested_qty": bn_lot,
-                    "margin_required": round(bn_premium * bn_lot, 2),
-                    "max_risk_in_rs": round(bn_risk_pts * bn_lot, 2),
-                    "expected_reward_in_rs": round(bn_target_pts * bn_lot, 2),
-                    "product_type": "MIS",
-                    "source": "UPSTOX_LIVE",
-                    "checklist": [
-                        {"rule": "Bank Nifty Trend Alignment", "passed": True},
-                        {"rule": "ATM Call Delta >= 0.48", "passed": True},
-                        {"rule": "Strict 20-pt SL Protected", "passed": True},
-                    ],
-                    "primary_reason": f"1 Lot ATM Call with ₹{bn_risk_pts * bn_lot:.0f} max risk within ₹{budget:,.0f} wallet",
-                    "price_action_score": 24,
-                    "market_structure": "HH_HL",
-                    "pa_setup": "Option Momentum Breakout",
-                    "setup_tier": "A+",
-                    "filter_verdict": f"A+ Prime Option Setup: 1 Lot ATM CE sized for ₹{budget:,.0f} wallet",
-                }
-            ]
-        elif active_mode == "NIFTY_OPTIONS":
+            bn_setup = {
+                "symbol": f"BANKNIFTY {bn_atm_strike} CE",
+                "name": f"Bank Nifty Weekly {bn_atm_strike} Call Option",
+                "sector": "Index Options",
+                "price": bn_premium,
+                "change": 18.50,
+                "change_pct": 6.94,
+                "vwap": bn_premium - 8.0,
+                "ema_9": bn_premium + 3.0,
+                "ema_20": bn_premium - 4.0,
+                "rvol": 2.40,
+                "signal": "BUY",
+                "ai_score": 92,
+                "entry_price": bn_premium,
+                "stop_loss": round(bn_premium - bn_risk_pts, 2),
+                "target_price": round(bn_premium + bn_target_pts, 2),
+                "risk_pts": bn_risk_pts,
+                "reward_pts": bn_target_pts,
+                "risk_reward": "1:2.1",
+                "setup_type": "ATM Delta 0.50 Breakout",
+                "index_aligned": True,
+                "alignment_status": "ALIGNED_BULLISH",
+                "suggested_qty": bn_lot,
+                "margin_required": round(bn_premium * bn_lot, 2),
+                "max_risk_in_rs": round(bn_risk_pts * bn_lot, 2),
+                "expected_reward_in_rs": round(bn_target_pts * bn_lot, 2),
+                "product_type": "MIS",
+                "source": "UPSTOX_LIVE",
+                "checklist": [
+                    {"rule": "Bank Nifty Trend Alignment", "passed": True},
+                    {"rule": "ATM Call Delta >= 0.48", "passed": True},
+                    {"rule": "Strict 20-pt SL Protected", "passed": True},
+                ],
+                "primary_reason": f"1 Lot ATM Call with ₹{bn_risk_pts * bn_lot:.0f} max risk within ₹{budget:,.0f} wallet",
+                "price_action_score": 24,
+                "market_structure": "HH_HL",
+                "pa_setup": "Option Momentum Breakout",
+                "setup_tier": "A+",
+                "filter_verdict": f"A+ Prime Option Setup: 1 Lot ATM CE sized for ₹{budget:,.0f} wallet",
+            }
+            option_setups.append(bn_setup)
+
+        if has_nifty:
             nifty_atm_strike = round(n_ltp / 50) * 50
             nifty_premium = 125.0
             nifty_lot = 25
             nifty_risk_pts = 10.0
             nifty_target_pts = 22.0
-            top_setups = [
-                {
-                    "symbol": f"NIFTY {nifty_atm_strike} CE",
-                    "name": f"NIFTY 50 Weekly {nifty_atm_strike} Call Option",
-                    "sector": "Index Options",
-                    "price": nifty_premium,
-                    "change": 12.00,
-                    "change_pct": 10.6,
-                    "vwap": nifty_premium - 5.0,
-                    "ema_9": nifty_premium + 2.0,
-                    "ema_20": nifty_premium - 3.0,
-                    "rvol": 2.10,
-                    "signal": "BUY",
-                    "ai_score": 90,
-                    "entry_price": nifty_premium,
-                    "stop_loss": round(nifty_premium - nifty_risk_pts, 2),
-                    "target_price": round(nifty_premium + nifty_target_pts, 2),
-                    "risk_pts": nifty_risk_pts,
-                    "reward_pts": nifty_target_pts,
-                    "risk_reward": "1:2.2",
-                    "setup_type": "ATM Volume Spike + VWAP Push",
-                    "index_aligned": True,
-                    "alignment_status": "ALIGNED_BULLISH",
-                    "suggested_qty": nifty_lot,
-                    "margin_required": round(nifty_premium * nifty_lot, 2),
-                    "max_risk_in_rs": round(nifty_risk_pts * nifty_lot, 2),
-                    "expected_reward_in_rs": round(nifty_target_pts * nifty_lot, 2),
-                    "product_type": "MIS",
-                    "source": "UPSTOX_LIVE",
-                    "checklist": [
-                        {"rule": "Nifty 50 15m Momentum Alignment", "passed": True},
-                        {"rule": "ATM Call Delta >= 0.50", "passed": True},
-                        {"rule": "Tight 10-pt SL Protected", "passed": True},
-                    ],
-                    "primary_reason": f"1 Lot ATM Call with ₹{nifty_risk_pts * nifty_lot:.0f} max risk within ₹{budget:,.0f} wallet",
-                    "price_action_score": 22,
-                    "market_structure": "HH_HL",
-                    "pa_setup": "Option Momentum Breakout",
-                    "setup_tier": "A+",
-                    "filter_verdict": f"A+ Prime Option Setup: 1 Lot ATM CE sized for ₹{budget:,.0f} wallet",
-                }
-            ]
+            nifty_setup = {
+                "symbol": f"NIFTY {nifty_atm_strike} CE",
+                "name": f"NIFTY 50 Weekly {nifty_atm_strike} Call Option",
+                "sector": "Index Options",
+                "price": nifty_premium,
+                "change": 12.00,
+                "change_pct": 10.6,
+                "vwap": nifty_premium - 5.0,
+                "ema_9": nifty_premium + 2.0,
+                "ema_20": nifty_premium - 3.0,
+                "rvol": 2.10,
+                "signal": "BUY",
+                "ai_score": 90,
+                "entry_price": nifty_premium,
+                "stop_loss": round(nifty_premium - nifty_risk_pts, 2),
+                "target_price": round(nifty_premium + nifty_target_pts, 2),
+                "risk_pts": nifty_risk_pts,
+                "reward_pts": nifty_target_pts,
+                "risk_reward": "1:2.2",
+                "setup_type": "ATM Volume Spike + VWAP Push",
+                "index_aligned": True,
+                "alignment_status": "ALIGNED_BULLISH",
+                "suggested_qty": nifty_lot,
+                "margin_required": round(nifty_premium * nifty_lot, 2),
+                "max_risk_in_rs": round(nifty_risk_pts * nifty_lot, 2),
+                "expected_reward_in_rs": round(nifty_target_pts * nifty_lot, 2),
+                "product_type": "MIS",
+                "source": "UPSTOX_LIVE",
+                "checklist": [
+                    {"rule": "Nifty 50 15m Momentum Alignment", "passed": True},
+                    {"rule": "ATM Call Delta >= 0.50", "passed": True},
+                    {"rule": "Tight 10-pt SL Protected", "passed": True},
+                ],
+                "primary_reason": f"1 Lot ATM Call with ₹{nifty_risk_pts * nifty_lot:.0f} max risk within ₹{budget:,.0f} wallet",
+                "price_action_score": 22,
+                "market_structure": "HH_HL",
+                "pa_setup": "Option Momentum Breakout",
+                "setup_tier": "A+",
+                "filter_verdict": f"A+ Prime Option Setup: 1 Lot ATM CE sized for ₹{budget:,.0f} wallet",
+            }
+            option_setups.append(nifty_setup)
+
+        if option_setups:
+            if not has_intraday and not has_swing:
+                top_setups = option_setups
+            else:
+                top_setups = option_setups + top_setups
 
         # Screener Funnel Metrics (5-Stage Architecture)
         funnel = {
@@ -1327,18 +1397,45 @@ class StockScreenerService:
             "scan_time": datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
         }
 
+        # Build consolidated wallet metrics respecting passed parameters
+        total_bp = 0.0
+        mode_allocs = {}
+        for m in active_modes:
+            m_lev = 5.0 if m == "INTRADAY_STOCKS" else 1.0
+            m_prod = "CNC" if m == "SWING_TRADING" else "MIS"
+            m_bp = budget * m_lev
+            total_bp += m_bp
+            m_max_act = (2 if budget <= 25000.0 else (3 if budget <= 50000.0 else 4)) if m == "INTRADAY_STOCKS" else (2 if budget <= 25000.0 else 3 if m == "SWING_TRADING" else 1)
+            mode_allocs[m] = {
+                "mode": m,
+                "budget": budget,
+                "leverage": m_lev,
+                "effective_buying_power": m_bp,
+                "product_type": m_prod,
+                "max_active_trades": m_max_act,
+                "allocation_per_stock_max": round(budget / max(1, m_max_act), 2),
+                "risk_per_trade_in_rs": max_capital_risk,
+                "daily_loss_limit_in_rs": round(budget * 0.03, 2),
+            }
+
+        total_alloc = budget * len(active_modes)
+        eff_multiplier = round(total_bp / total_alloc, 2) if total_alloc > 0 else 1.0
+
         wallet_metrics = {
             "wallet_budget": budget,
-            "effective_buying_power": budget * leverage,
-            "leverage_multiplier": leverage,
+            "effective_buying_power": round(total_bp, 2),
+            "leverage_multiplier": eff_multiplier,
             "risk_per_trade_in_rs": max_capital_risk,
-            "daily_loss_limit_in_rs": round(budget * (active_plan["max_daily_loss_pct"] / 100.0), 2),
-            "max_active_trades": max_active_stocks,
+            "daily_loss_limit_in_rs": round(total_alloc * (float(active_plan.get("max_daily_loss_pct", 3.0)) / 100.0), 2),
+            "max_active_trades": sum(ma["max_active_trades"] for ma in mode_allocs.values()),
             "allocation_per_stock_max": round(alloc_per_stock_max, 2),
-            "mode": active_mode,
-            "product_type": prod_type,
-            "square_off_mandatory": active_mode == "INTRADAY_STOCKS",
-            "kill_switch_active": active_plan["kill_switch_active"],
+            "mode": ",".join(active_modes),
+            "active_modes": active_modes,
+            "mode_allocations": mode_allocs,
+            "total_allocated_capital": round(total_alloc, 2),
+            "product_type": prod_type if len(active_modes) == 1 else ("MIS & CNC" if has_intraday and has_swing else prod_type),
+            "square_off_mandatory": has_intraday,
+            "kill_switch_active": active_plan.get("kill_switch_active", False),
         }
 
         # Process live paper trading ticks and auto-entries
