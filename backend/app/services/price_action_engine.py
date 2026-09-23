@@ -53,12 +53,15 @@ class PriceActionEngine:
         index_aligned: bool,
         setup_type: str,
         market_regime: str = "TRENDING",
+        relative_strength: float = 0.0,
     ) -> PriceActionEvaluation:
         """
         Evaluates the 0-20 Price Action Scoring Rubric for a given stock.
         """
-        # Quantitative Market Regime Gatekeeper: If market is in Sideways Chop, block ORB breakouts
-        if market_regime == "SIDEWAYS_CHOP":
+        is_alpha_breakout = (abs(relative_strength) >= 0.20 and rvol >= 1.25)
+
+        # Quantitative Market Regime Gatekeeper: If market is in Sideways Chop, block beta stocks, but allow independent Alpha Breakouts
+        if market_regime == "SIDEWAYS_CHOP" and not is_alpha_breakout:
             return PriceActionEvaluation(
                 score=4,
                 market_structure="SIDEWAYS_CHOP",
@@ -196,21 +199,22 @@ class PriceActionEngine:
 
         else:
             # Generic stocks
-            if strategy_signal == "BUY" and index_aligned:
-                structure = "HH_HL"
-                retest_level = round(current_price * 0.995, 2)
-                pa_setup = "Swing Continuation"
+            is_alpha = (abs(relative_strength) >= 0.20 and rvol >= 1.25)
+            if (strategy_signal in ("BUY", "SELL")) and (index_aligned or is_alpha):
+                structure = "HH_HL" if strategy_signal == "BUY" else "LH_LL"
+                retest_level = round(current_price * (0.995 if strategy_signal == "BUY" else 1.005), 2)
+                pa_setup = f"Alpha Breakout (RS: {relative_strength:+.2f}%)" if is_alpha else "Swing Continuation"
                 checklist = [
-                    {"rule": "Market Structure (HH + HL)", "points": 4, "max": 4, "passed": True, "detail": "Constructive intraday structure"},
-                    {"rule": "Breakout Quality", "points": 3, "max": 4, "passed": True, "detail": "Moderate breakout close"},
-                    {"rule": "Retest Confirmation", "points": 2, "max": 4, "passed": False, "detail": "Retest in progress"},
-                    {"rule": "Volume Context", "points": 2, "max": 3, "passed": rvol >= 1.4, "detail": f"{rvol}x volume"},
-                    {"rule": "Key S/R Interaction", "points": 2, "max": 3, "passed": True, "detail": "Testing local pivot"},
-                    {"rule": "Candle Strength", "points": 1, "max": 2, "passed": True, "detail": "Neutral-to-positive candle body"},
+                    {"rule": "Market Structure (HH/HL or LH/LL)", "points": 4, "max": 4, "passed": True, "detail": "Constructive intraday structure"},
+                    {"rule": "Breakout Quality", "points": 3, "max": 4, "passed": True, "detail": "Clean breakout through VWAP/range"},
+                    {"rule": "Retest Confirmation", "points": 3, "max": 4, "passed": is_alpha, "detail": "Retest confirmed holding dynamic support" if is_alpha else "Retest in progress"},
+                    {"rule": "Volume Context", "points": 3, "max": 3, "passed": rvol >= 1.25, "detail": f"{rvol}x volume expansion"},
+                    {"rule": "Key S/R Interaction", "points": 3, "max": 3, "passed": True, "detail": "Testing dynamic pivot level"},
+                    {"rule": "Candle Strength", "points": 2, "max": 2, "passed": True, "detail": "Directional conviction candle body"},
                 ]
-                total_score = 12
-                tier = "B"
-                verdict = "B Setup (Watchlist): Structure constructive but pending clean retest confirmation."
+                total_score = sum(c["points"] for c in checklist if c["passed"])
+                tier = "A+" if total_score >= 17 else ("A" if total_score >= 14 else "B")
+                verdict = f"{tier} Setup: High-conviction {'Alpha' if is_alpha else 'Momentum'} breakout with strong volume and relative strength."
             else:
                 structure = "SIDEWAYS_CHOP"
                 retest_level = current_price

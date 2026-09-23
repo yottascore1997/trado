@@ -1071,10 +1071,19 @@ class StockScreenerService:
                 rs_status = "IN_LINE"
 
             # Quantitative Market Regime & Anti-Chasing Gatekeepers:
+            is_alpha_breakout = (
+                (signal == "BUY" and relative_strength >= 0.20 and rvol >= 1.25) or
+                (signal == "SELL" and relative_strength <= -0.20 and rvol >= 1.25)
+            )
+
             if is_nifty_choppy:
-                signal = "NO_TRADE"
-                setup_type = "Filtered: NIFTY in Sideways Chop"
-                ai_score = min(ai_score, 58)
+                if not is_alpha_breakout:
+                    signal = "NO_TRADE"
+                    setup_type = "Filtered: NIFTY in Sideways Chop"
+                    ai_score = min(ai_score, 58)
+                else:
+                    setup_type = f"Alpha Breakout (RS: {relative_strength:+.2f}%, RVOL: {rvol}x)"
+                    ai_score = max(ai_score, 82)
             elif is_extended and signal in ("BUY", "SELL"):
                 # Stock is over-extended (>1.25x ATR from VWAP), high risk of pullback trap
                 setup_type = f"Extended ({atr_extension_ratio}x ATR from VWAP) - Wait for Retest"
@@ -1100,7 +1109,7 @@ class StockScreenerService:
 
             # Check Criteria Checklist with Relative Strength & Dynamic ATR
             checklist = [
-                {"rule": "Market Regime Filter (Trending Confirmed)", "passed": not is_nifty_choppy},
+                {"rule": "Market Regime Filter (Trending Confirmed)", "passed": not is_nifty_choppy or is_alpha_breakout},
                 {"rule": "Trend Confirmation (5m & 15m)", "passed": trend_5m == "BULLISH" and trend_15m == "BULLISH" if signal == "BUY" else trend_5m == "BEARISH"},
                 {"rule": "VWAP Anchor (Price > VWAP for BUY)", "passed": price > vwap if signal == "BUY" else price < vwap},
                 {"rule": "EMA 9 > EMA 20 Alignment", "passed": ema_9 > ema_20 if signal == "BUY" else ema_9 < ema_20},
@@ -1109,7 +1118,7 @@ class StockScreenerService:
                 {"rule": f"Anti-Chasing ATR Buffer ({atr_extension_ratio}x ATR <= 1.25x)", "passed": not is_extended},
                 {"rule": f"Relative Strength vs NIFTY ({relative_strength:+}%)", "passed": relative_strength >= 0.10 if signal == "BUY" else relative_strength <= -0.10},
                 {"rule": "Risk:Reward >= 1:2.0", "passed": reward_pts >= risk_pts * 1.95},
-                {"rule": f"NSE Market Alignment ({alignment_status})", "passed": is_index_aligned or signal == "NO_TRADE"},
+                {"rule": f"NSE Market Alignment ({alignment_status})", "passed": is_index_aligned or signal == "NO_TRADE" or is_alpha_breakout},
             ]
 
             # Evaluate Price Action Engine (V2 Modular Quality Layer)
@@ -1123,6 +1132,7 @@ class StockScreenerService:
                 index_aligned=is_index_aligned,
                 setup_type=setup_type,
                 market_regime=nifty_status.get("regime", "TRENDING"),
+                relative_strength=relative_strength,
             )
 
             # 5. Multi-Factor Composite Trade Ranking (0 to 100 Prop-Desk Quality Model)

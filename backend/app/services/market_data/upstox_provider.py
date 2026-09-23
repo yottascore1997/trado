@@ -99,11 +99,19 @@ class UpstoxMarketDataProvider(BaseMarketDataProvider):
     }
 
     def __init__(self):
-        self.access_token = settings.UPSTOX_ACCESS_TOKEN
+        self._manual_token: Optional[str] = None
         self.cached_profile: Optional[Dict[str, Any]] = None
         self._last_profile_fetch: Optional[datetime] = None
+        self._last_token_used: Optional[str] = None
 
+    @property
+    def access_token(self) -> Optional[str]:
+        return self._manual_token or settings.UPSTOX_ACCESS_TOKEN
 
+    @access_token.setter
+    def access_token(self, val: Optional[str]):
+        self._manual_token = val
+        self.cached_profile = None
 
     def _get_headers(self) -> Dict[str, str]:
         token = (self.access_token or "").strip()
@@ -120,6 +128,12 @@ class UpstoxMarketDataProvider(BaseMarketDataProvider):
 
     async def get_user_profile(self) -> Dict[str, Any]:
         """Fetch Upstox authenticated user profile."""
+        current_token = self.access_token
+        # Invalidate cache if token changed
+        if current_token != self._last_token_used:
+            self.cached_profile = None
+            self._last_token_used = current_token
+
         now = datetime.now(timezone.utc)
         if self.cached_profile and self._last_profile_fetch:
             if (now - self._last_profile_fetch).total_seconds() < 300:

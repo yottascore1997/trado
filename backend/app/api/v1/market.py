@@ -410,28 +410,13 @@ async def update_broker_token(payload: dict):
         clean_token = clean_token[7:].strip()
 
     from app.config import settings
-    settings.UPSTOX_ACCESS_TOKEN = clean_token
+    # Authoritative update across memory, os.environ, root .env and backend/.env
+    settings.set_upstox_token(clean_token)
     settings.MARKET_DATA_PROVIDER = "UPSTOX"
 
     # Reset & instantiate Upstox provider with the new token
     from app.services.market_data.factory import set_market_data_provider
     provider = set_market_data_provider("UPSTOX", access_token=clean_token)
-
-    # Persist to .env if possible
-    import re
-    from pathlib import Path
-    try:
-        for p in [Path(__file__).resolve().parent.parent.parent.parent / ".env", Path(".env"), Path("backend/.env")]:
-            if p.exists():
-                text = p.read_text(encoding="utf-8")
-                if "UPSTOX_ACCESS_TOKEN" in text:
-                    text = re.sub(r'UPSTOX_ACCESS_TOKEN=".*?"', f'UPSTOX_ACCESS_TOKEN="{clean_token}"', text)
-                else:
-                    text += f'\nUPSTOX_ACCESS_TOKEN="{clean_token}"\n'
-                p.write_text(text, encoding="utf-8")
-                break
-    except Exception as e:
-        logger.warning(f"Could not persist token to .env: {e}")
 
     # Immediately verify token with Upstox API
     profile = await provider.get_user_profile()
