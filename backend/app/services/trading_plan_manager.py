@@ -305,6 +305,72 @@ class TradingPlanManager:
             "system_risk_tag": f"WALLET_ISOLATION_{int(budget)}",
         }
 
+        is_paper = self._plan.get("is_paper_mode", True)
+        live_broker_order_id = None
+
+        if is_paper:
+            # Route to genuine paper trading engine for real-time MTM and trailing SL tracking
+            try:
+                from app.services.paper_trading_engine import paper_trading_engine
+                paper_trading_engine.open_position(
+                    symbol=order.symbol,
+                    side=order.side,
+                    quantity=order.quantity,
+                    entry_price=order.entry_price,
+                    stop_loss=order.stop_loss,
+                    target_price=order.target_price,
+                    margin_required=margin_required,
+                    product_type=order.product_type or "MIS",
+                    setup_type=order.setup_name or "Manual Plan Execution",
+                )
+            except Exception as e:
+                logger.debug(f"Sync order to paper engine: {e}")
+            order_msg = f"Order {order_id} punched safely within ₹{budget:,.0f} wallet limit."
+        else:
+            # LIVE BROKER EXECUTION via Upstox API V2
+            import httpx
+            from app.config import settings
+
+            if not settings.UPSTOX_ACCESS_TOKEN:
+                raise ValueError("LIVE BROKER ERROR: No active Upstox access token configured. Cannot place real-money order.")
+
+            upstox_headers = {
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {settings.UPSTOX_ACCESS_TOKEN}",
+            }
+            inst_key = f"NSE_EQ|{order.symbol}"
+            broker_order_req = {
+                "quantity": order.quantity,
+                "product": "I" if order.product_type == "MIS" else "D",
+                "validity": "DAY",
+                "price": 0.0,
+                "tag": f"WALLET_{int(budget)}",
+                "instrument_token": inst_key,
+                "order_type": "MARKET",
+                "transaction_type": order.side,
+                "disclosed_quantity": 0,
+                "trigger_price": 0.0,
+                "is_amo": False,
+            }
+            try:
+                with httpx.Client(timeout=6.0) as client:
+                    resp = client.post(
+                        "https://api.upstox.com/v2/order/place",
+                        headers=upstox_headers,
+                        json=broker_order_req,
+                    )
+                    if resp.status_code in (200, 201):
+                        resp_data = resp.json().get("data", {})
+                        live_broker_order_id = resp_data.get("order_id")
+                        order_id = f"UPSTOX-{live_broker_order_id}"
+                        order_msg = f"LIVE ORDER FILLED: Upstox Order #{live_broker_order_id} placed successfully."
+                    else:
+                        err_detail = resp.json().get("errors", [{}])[0].get("message", resp.text)
+                        raise ValueError(f"UPSTOX REJECTED ORDER ({resp.status_code}): {err_detail}")
+            except httpx.RequestError as e:
+                raise ValueError(f"BROKER GATEWAY UNREACHABLE: Network error connecting to Upstox ({e})")
+
         record = {
             "order_id": order_id,
             "symbol": order.symbol,
@@ -315,6 +381,7 @@ class TradingPlanManager:
             "target_price": order.target_price,
             "margin_required": margin_required,
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "live_broker_order_id": live_broker_order_id,
         }
         self._executed_orders.append(record)
 
@@ -334,7 +401,7 @@ class TradingPlanManager:
             wallet_budget_before=budget,
             wallet_margin_used=margin_required,
             wallet_buffer_remaining=buffer_remaining,
-            message=f"Order {order_id} punched safely within ₹{budget:,.0f} wallet limit.",
+            message=order_msg,
             broker_payload_preview=upstox_payload,
         )
 
