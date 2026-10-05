@@ -221,22 +221,29 @@ class PaperTradingEngine:
                         if target_dist > 0:
                             gain_ratio = (current_price - entry) / target_dist
 
-                            # Stage 3: Super Profit Lock (90%+ near target) -> Lock 70% of target move
+                            # Stage 4: Super Profit Lock (90%+ near target) -> Lock 70% of target move
                             if gain_ratio >= 0.90:
                                 lock_px = round(entry + (target_dist * 0.70), 2)
                                 if lock_px > pos["stop_loss"]:
                                     pos["stop_loss"] = lock_px
                                     pos["trailing_stage"] = "PROFIT_LOCK"
                                     logger.info(f"🔒 [PROFIT LOCK 70%] {sym}: Trailing SL raised to ₹{lock_px} (near target)")
-                            # Stage 2: Profit Lock (75%+ of target distance) -> Lock 50% of target move
+                            # Stage 3: Profit Lock (75%+ of target distance) -> Lock 50% of target move
                             elif gain_ratio >= 0.75:
                                 lock_px = round(entry + (target_dist * 0.50), 2)
                                 if lock_px > pos["stop_loss"]:
                                     pos["stop_loss"] = lock_px
                                     pos["trailing_stage"] = "PROFIT_LOCK"
                                     logger.info(f"🔒 [PROFIT LOCK 50%] {sym}: Trailing SL raised to ₹{lock_px}")
-                            # Stage 1: Breakeven Protection (50%+ of target distance) -> Shift SL to Entry
+                            # Stage 2: Profit Lock (50%+ of target distance) -> Lock 25% of target move
                             elif gain_ratio >= 0.50:
+                                lock_px = round(entry + (target_dist * 0.25), 2)
+                                if lock_px > pos["stop_loss"]:
+                                    pos["stop_loss"] = lock_px
+                                    pos["trailing_stage"] = "PROFIT_LOCK"
+                                    logger.info(f"🔒 [PROFIT LOCK 25%] {sym}: Trailing SL raised to ₹{lock_px} (50% target move reached)")
+                            # Stage 1: Breakeven Protection (35%+ of target distance) -> Shift SL to Entry
+                            elif gain_ratio >= 0.35:
                                 if pos["stop_loss"] < entry:
                                     pos["stop_loss"] = round(entry, 2)
                                     pos["trailing_stage"] = "BREAKEVEN"
@@ -253,16 +260,16 @@ class PaperTradingEngine:
                             reason = "TRAILING_SL_HIT" if stage == "PROFIT_LOCK" else ("BREAKEVEN_EXIT" if stage == "BREAKEVEN" else "STOP_LOSS_HIT")
                             positions_to_close.append((pos["position_id"], reason, current_price))
                         elif curr_vwap > 0 and not is_cnc:
-                            # ⚡ Sustained Thesis Invalidation: Requires at least 5 consecutive ticks below threshold
+                            # ⚡ Sustained Thesis Invalidation: Requires at least 3 consecutive ticks below threshold
                             # to filter out deceptive 5-10 second liquidity sweep wicks
-                            vwap_buffer = max(0.10, round(curr_vwap * 0.0020, 2))
+                            vwap_buffer = max(0.15, round(curr_vwap * 0.0025, 2))
                             threshold = round(curr_vwap - vwap_buffer, 2)
                             sl_dist = abs(entry - pos["stop_loss"])
                             min_underwater_dist = max(0.20, round(max(entry * 0.0025, sl_dist * 0.25), 2))
                             if current_price < threshold and (entry - current_price) >= min_underwater_dist:
                                 breach_count = pos.get("vwap_breach_count", 0) + 1
                                 pos["vwap_breach_count"] = breach_count
-                                if breach_count >= 2:
+                                if breach_count >= 3:
                                     logger.info(
                                         f"⚡ [THESIS INVALIDATED] {sym}: Price ₹{current_price} sustained below VWAP ₹{curr_vwap} "
                                         f"(loss: ₹{round(entry - current_price, 2)} >= ₹{min_underwater_dist}) "
@@ -272,7 +279,7 @@ class PaperTradingEngine:
                                 else:
                                     logger.debug(
                                         f"⚠️ [VWAP BREACH WARNING] {sym}: Price ₹{current_price} below VWAP threshold ₹{threshold} "
-                                        f"(breach {breach_count}/2). Awaiting sustained confirmation."
+                                        f"(breach {breach_count}/3). Awaiting sustained confirmation."
                                     )
                             else:
                                 pos["vwap_breach_count"] = 0
@@ -291,22 +298,29 @@ class PaperTradingEngine:
                         if target_dist > 0:
                             gain_ratio = (entry - current_price) / target_dist
 
-                            # Stage 3: Super Profit Lock (90%+ near target) -> Lock 70% of target move
+                            # Stage 4: Super Profit Lock (90%+ near target) -> Lock 70% of target move
                             if gain_ratio >= 0.90:
                                 lock_px = round(entry - (target_dist * 0.70), 2)
                                 if lock_px < pos["stop_loss"]:
                                     pos["stop_loss"] = lock_px
                                     pos["trailing_stage"] = "PROFIT_LOCK"
                                     logger.info(f"🔒 [PROFIT LOCK 70%] {sym}: Trailing SL lowered to ₹{lock_px} (near target)")
-                            # Stage 2: Profit Lock (75%+ of target distance) -> Lock 50% of target move
+                            # Stage 3: Profit Lock (75%+ of target distance) -> Lock 50% of target move
                             elif gain_ratio >= 0.75:
                                 lock_px = round(entry - (target_dist * 0.50), 2)
                                 if lock_px < pos["stop_loss"]:
                                     pos["stop_loss"] = lock_px
                                     pos["trailing_stage"] = "PROFIT_LOCK"
                                     logger.info(f"🔒 [PROFIT LOCK 50%] {sym}: Trailing SL lowered to ₹{lock_px}")
-                            # Stage 1: Breakeven Protection (50%+ of target distance) -> Shift SL to Entry
+                            # Stage 2: Profit Lock (50%+ of target distance) -> Lock 25% of target move
                             elif gain_ratio >= 0.50:
+                                lock_px = round(entry - (target_dist * 0.25), 2)
+                                if lock_px < pos["stop_loss"]:
+                                    pos["stop_loss"] = lock_px
+                                    pos["trailing_stage"] = "PROFIT_LOCK"
+                                    logger.info(f"🔒 [PROFIT LOCK 25%] {sym}: Trailing SL lowered to ₹{lock_px} (50% target move reached)")
+                            # Stage 1: Breakeven Protection (35%+ of target distance) -> Shift SL to Entry
+                            elif gain_ratio >= 0.35:
                                 if pos["stop_loss"] > entry:
                                     pos["stop_loss"] = round(entry, 2)
                                     pos["trailing_stage"] = "BREAKEVEN"
@@ -323,15 +337,16 @@ class PaperTradingEngine:
                             reason = "TRAILING_SL_HIT" if stage == "PROFIT_LOCK" else ("BREAKEVEN_EXIT" if stage == "BREAKEVEN" else "STOP_LOSS_HIT")
                             positions_to_close.append((pos["position_id"], reason, current_price))
                         elif curr_vwap > 0 and not is_cnc:
-                            # ⚡ Thesis Invalidation: Requires 2 consecutive ticks above threshold to filter out single-tick wicks
-                            vwap_buffer = max(0.10, round(curr_vwap * 0.0020, 2))
+                            # ⚡ Sustained Thesis Invalidation: Requires at least 3 consecutive ticks above threshold
+                            # to filter out deceptive 5-10 second liquidity sweep wicks
+                            vwap_buffer = max(0.15, round(curr_vwap * 0.0025, 2))
                             threshold = round(curr_vwap + vwap_buffer, 2)
                             sl_dist = abs(entry - pos["stop_loss"])
                             min_underwater_dist = max(0.20, round(max(entry * 0.0025, sl_dist * 0.25), 2))
                             if current_price > threshold and (current_price - entry) >= min_underwater_dist:
                                 breach_count = pos.get("vwap_breach_count", 0) + 1
                                 pos["vwap_breach_count"] = breach_count
-                                if breach_count >= 2:
+                                if breach_count >= 3:
                                     logger.info(
                                         f"⚡ [THESIS INVALIDATED] {sym}: Price ₹{current_price} confirmed above VWAP ₹{curr_vwap} "
                                         f"(loss: ₹{round(current_price - entry, 2)} >= ₹{min_underwater_dist}) "
@@ -341,7 +356,7 @@ class PaperTradingEngine:
                                 else:
                                     logger.debug(
                                         f"⚠️ [VWAP BREACH WARNING] {sym}: Price ₹{current_price} breached VWAP resistance threshold ₹{threshold} "
-                                        f"(breach {breach_count}/2). Awaiting sustained confirmation."
+                                        f"(breach {breach_count}/3). Awaiting sustained confirmation."
                                     )
                             else:
                                 pos["vwap_breach_count"] = 0
@@ -458,7 +473,16 @@ class PaperTradingEngine:
             )
             return
 
-        max_active = 2 if self.wallet_budget <= 25000.0 else 3
+        # 3. Account-Level Daily Max Trades Limit (Prevents overtrading & heavy turnover taxes)
+        max_daily_trades = int(active_plan.get("max_daily_trades", 6))
+        if len(today_trades) >= max_daily_trades:
+            logger.info(
+                f"⏸️ [DAILY TRADE LIMIT REACHED] {len(today_trades)} trades completed today "
+                f"(max allowed: {max_daily_trades}). Halting fresh auto-entries to protect profits and avoid statutory tax churn."
+            )
+            return
+
+        max_active = int(active_plan.get("max_active_trades", 2 if self.wallet_budget <= 25000.0 else 3))
         if len(self.open_positions) >= max_active:
             return  # Already at maximum active allocation
 

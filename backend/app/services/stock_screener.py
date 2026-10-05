@@ -942,7 +942,8 @@ class StockScreenerService:
 
         # Baseline per-stock allocation & leverage
         if has_intraday:
-            max_active_stocks = 2 if budget <= 25000.0 else (3 if budget <= 50000.0 else 4)
+            plan_max_active = int(active_plan.get("max_active_trades", 2 if budget <= 25000.0 else 3))
+            max_active_stocks = max(1, plan_max_active)
             alloc_per_stock_max = budget / max_active_stocks
             leverage = 5.0
             prod_type = "MIS"
@@ -1005,8 +1006,8 @@ class StockScreenerService:
                 orb_buffer = round(price * 0.0010, 2)
                 is_orb_breakout = (price >= (orb_high - orb_buffer)) and (high_p - low_p > 0)
                 is_orb_breakdown = (price <= (orb_low + orb_buffer)) and (high_p - low_p > 0)
-                # 3. 0.10% VWAP Breakout Buffer (ensures genuine breakout, not chop on top of VWAP)
-                vwap_entry_buffer = round(vwap * 0.0010, 2)
+                # 3. 0.15% VWAP Breakout Buffer (ensures genuine momentum breakout, not 10-paise noise on top of VWAP)
+                vwap_entry_buffer = max(0.15, round(vwap * 0.0015, 2))
 
                 # Dynamic Momentum Moving Averages (Weighted close & VWAP confluence):
                 # EMA 9 represents fast momentum tracking close to current price

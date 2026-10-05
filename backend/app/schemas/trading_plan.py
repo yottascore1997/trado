@@ -15,6 +15,7 @@ class TradingPlanBase(BaseModel):
     risk_per_trade_pct: float = Field(default=1.5, ge=0.1, le=5.0, description="Risk per trade as % of wallet")
     max_daily_loss_pct: float = Field(default=3.0, ge=0.5, le=10.0, description="Daily stop-loss limit as % of wallet")
     max_active_trades: int = Field(default=2, ge=1, le=10, description="Max simultaneous active trades")
+    max_daily_trades: int = Field(default=6, ge=1, le=20, description="Max closed trades per day to prevent overtrading & high turnover taxes")
     auto_square_off_time: str = Field(default="15:15:00", description="Intraday auto-exit time")
     is_paper_mode: bool = Field(default=True, description="Whether executing in zero-risk paper mode")
     kill_switch_active: bool = Field(default=False, description="Emergency lock state")
@@ -27,6 +28,7 @@ class TradingPlanUpdate(BaseModel):
     risk_per_trade_pct: Optional[float] = Field(None, ge=0.1, le=5.0)
     max_daily_loss_pct: Optional[float] = Field(None, ge=0.5, le=10.0)
     max_active_trades: Optional[int] = Field(None, ge=1, le=10)
+    max_daily_trades: Optional[int] = Field(None, ge=1, le=20)
     auto_square_off_time: Optional[str] = None
     is_paper_mode: Optional[bool] = None
     kill_switch_active: Optional[bool] = None

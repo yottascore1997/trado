@@ -217,14 +217,14 @@ def test_breakeven_protection_on_fifty_percent_target_move():
         margin_required=3000.0,
     )
 
-    # 1. Price moves to 1530 (+30 pts = 50% of target move)
-    engine.process_market_tick({"NSE_EQ:INFY": {"last_price": 1530.0}})
+    # 1. Price moves to 1522 (+22 pts = 36% of target move) -> Trailed to Breakeven
+    engine.process_market_tick({"NSE_EQ:INFY": {"last_price": 1522.0}})
     assert len(engine.open_positions) == 1
     current_pos = engine.open_positions[0]
     assert current_pos["stop_loss"] == 1500.0  # Trailed to cost
     assert current_pos["trailing_stage"] == "BREAKEVEN"
 
-    # 2. Market reverses and drops back to 1500 (Cost)
+    # 2. Market reverses and drops back to 1499 (Cost)
     engine.process_market_tick({"NSE_EQ:INFY": {"last_price": 1499.0}})
     assert len(engine.open_positions) == 0
     trade = engine.closed_trades[-1]
@@ -235,6 +235,34 @@ def test_breakeven_protection_on_fifty_percent_target_move():
     assert eligible is False
     # Instead of locked for day, it is in cooldown
     assert "Cooldown active" in engine.check_symbol_entry_eligibility("INFY")[1]
+
+
+def test_profit_lock_at_fifty_percent_target():
+    """Validates that reaching 50% of target distance locks 25% of the target move in profit."""
+    engine = PaperTradingEngine(initial_budget=10000.0, persist=False)
+    pos = engine.open_position(
+        symbol="TCS",
+        side="BUY",
+        quantity=10,
+        entry_price=4000.0,
+        stop_loss=3960.0,   # 40 pts risk
+        target_price=4080.0, # 80 pts target
+        margin_required=8000.0,
+    )
+    # Price reaches 4040 (+40 pts = 50% of 80 pts target distance)
+    # 50% target achieved -> Locks 25% of target (20 pts) -> SL = 4020
+    engine.process_market_tick({"NSE_EQ:TCS": {"last_price": 4040.0}})
+    assert len(engine.open_positions) == 1
+    current_pos = engine.open_positions[0]
+    assert current_pos["stop_loss"] == 4020.0
+    assert current_pos["trailing_stage"] == "PROFIT_LOCK"
+
+    # Market reverses to 4018, triggering the 25% profit lock SL
+    engine.process_market_tick({"NSE_EQ:TCS": {"last_price": 4018.0}})
+    assert len(engine.open_positions) == 0
+    trade = engine.closed_trades[-1]
+    assert trade["exit_reason"] == "TRAILING_SL_HIT"
+    assert trade["gross_pnl"] >= 180.0  # (4020 - 4000) * 10 or exit px near 4018
 
 
 def test_profit_lock_trailing_sl_near_target_reversal():
@@ -360,7 +388,12 @@ def test_thesis_invalidation_buy_early_exit():
     assert len(engine.open_positions) == 1
     assert engine.open_positions[0]["vwap_breach_count"] == 1
 
-    # Tick 2: Second consecutive breach confirms thesis invalidation and triggers early exit
+    # Tick 2: Second consecutive breach logged as warning, position still open
+    engine.process_market_tick(quotes)
+    assert len(engine.open_positions) == 1
+    assert engine.open_positions[0]["vwap_breach_count"] == 2
+
+    # Tick 3: Third consecutive breach confirms sustained invalidation and triggers early exit
     engine.process_market_tick(quotes)
     assert len(engine.open_positions) == 0
     trade = engine.closed_trades[-1]
@@ -374,8 +407,8 @@ def test_thesis_invalidation_buy_early_exit():
 
 def test_thesis_invalidation_sell_early_exit():
     """
-    Validates that if a SELL position's price climbs back above VWAP resistance beyond 0.20% buffer
-    while underwater, it requires 2 consecutive ticks to confirm thesis invalidation and execute an early exit.
+    Validates that if a SELL position's price climbs back above VWAP resistance beyond buffer
+    while underwater, it requires 3 consecutive ticks to confirm thesis invalidation and execute an early exit.
     """
     engine = PaperTradingEngine(initial_budget=10000.0, persist=False)
     pos = engine.open_position(
@@ -390,7 +423,7 @@ def test_thesis_invalidation_sell_early_exit():
     )
     assert len(engine.open_positions) == 1
 
-    # Price rises to 1505.0: Above VWAP 1495.0 (beyond 0.20% buffer: 1495 + 2.99 = 1497.99)
+    # Price rises to 1505.0: Above VWAP 1495.0 (beyond buffer: 1495 + 3.74 = 1498.74)
     # and above Entry 1500.0, but well below SL 1520.0
     quotes = {
         "NSE_EQ:INFY": {
@@ -405,7 +438,12 @@ def test_thesis_invalidation_sell_early_exit():
     assert len(engine.open_positions) == 1
     assert engine.open_positions[0]["vwap_breach_count"] == 1
 
-    # Tick 2: Second consecutive breach confirms thesis invalidation and triggers early exit
+    # Tick 2: Second consecutive breach logged as warning, position still open
+    engine.process_market_tick(quotes)
+    assert len(engine.open_positions) == 1
+    assert engine.open_positions[0]["vwap_breach_count"] == 2
+
+    # Tick 3: Third consecutive breach confirms sustained invalidation and triggers early exit
     engine.process_market_tick(quotes)
     assert len(engine.open_positions) == 0
     trade = engine.closed_trades[-1]

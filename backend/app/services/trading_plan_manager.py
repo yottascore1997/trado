@@ -34,6 +34,7 @@ class TradingPlanManager:
             "risk_per_trade_pct": 1.5,
             "max_daily_loss_pct": 3.0,
             "max_active_trades": 2,
+            "max_daily_trades": 6,
             "auto_square_off_time": "15:15:00",
             "is_paper_mode": True,
             "kill_switch_active": False,
@@ -50,6 +51,7 @@ class TradingPlanManager:
                     saved = json.load(f)
                     if isinstance(saved, dict):
                         self._plan.update(saved)
+                        self._plan.setdefault("max_daily_trades", 6)
                         if "trading_modes" not in self._plan:
                             raw_mode = self._plan.get("trading_mode", "INTRADAY_STOCKS")
                             self._plan["trading_modes"] = [m.strip() for m in raw_mode.split(",") if m.strip()]

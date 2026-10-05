@@ -205,3 +205,51 @@ def test_daily_loss_circuit_breaker_halts_auto_trading():
 
     # Must NOT open any new position because Daily Circuit Breaker is active!
     assert len(engine.open_positions) == 0
+
+
+def test_daily_max_trades_limit_halts_auto_trading():
+    """
+    Validates that when the daily completed trades count reaches max_daily_trades (default 6),
+    auto-trading entries are halted to eliminate overtrading and fee drag.
+    """
+    engine = PaperTradingEngine(initial_budget=25000.0, persist=False)
+    trading_day = make_ist_time(2026, 9, 23, 11, 30)
+    today_date_str = trading_day.strftime("%Y-%m-%d")
+
+    # Simulate 6 completed trades today
+    engine.closed_trades = [
+        {
+            "trade_id": f"T{i}",
+            "symbol": f"STOCK{i}",
+            "side": "BUY",
+            "quantity": 10,
+            "entry_price": 500.0,
+            "exit_price": 505.0,
+            "date": today_date_str,
+            "gross_pnl": 50.0,
+            "charges": 5.0,
+            "net_pnl": 45.0,
+            "exit_reason": "TARGET_HIT",
+        }
+        for i in range(1, 7)
+    ]
+    engine.recalculate_margins()
+
+    # Now attempt a new high-conviction A+ trade in INFY at 11:30 AM
+    mock_setups = [{
+        "symbol": "INFY",
+        "signal": "BUY",
+        "price": 1500.0,
+        "entry_price": 1500.0,
+        "stop_loss": 1485.0,
+        "target_price": 1530.0,
+        "suggested_qty": 5,
+        "setup_tier": "A+",
+        "setup_type": "Trend Breakout",
+    }]
+    quotes = {"NSE_EQ:INFY": {"last_price": 1500.0}}
+
+    engine.process_market_tick(quotes, top_setups=mock_setups, current_time=trading_day)
+
+    # Must NOT open any new position because max daily trades limit (6) has been reached!
+    assert len(engine.open_positions) == 0
