@@ -819,7 +819,7 @@ export const PaperTradingDashboard: React.FC = () => {
                                     {t.symbol}
                                   </span>
                                   <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-950/80 text-cyan-400 border border-cyan-800/60 font-mono flex items-center gap-0.5">
-                                    <BarChart2 className="w-2.5 h-2.5" /> Setup ↗
+                                    <BarChart2 className="w-2.5 h-2.5" /> Chart ↗
                                   </span>
                                   <span
                                     className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
@@ -842,6 +842,8 @@ export const PaperTradingDashboard: React.FC = () => {
                                       ? "🛡️ BREAKEVEN PROTECTED"
                                       : t.exit_reason === "THESIS_INVALIDATED"
                                       ? "⚡ EARLY EXIT (VWAP REVERSAL)"
+                                      : t.exit_reason === "STAGNATION_EXIT"
+                                      ? "⏱️ TIME-STOP (STAGNATION)"
                                       : t.exit_reason === "INTRADAY_SQUARE_OFF"
                                       ? "⏰ 3:15 PM AUTO EXIT"
                                       : t.exit_reason === "STOP_LOSS_HIT"

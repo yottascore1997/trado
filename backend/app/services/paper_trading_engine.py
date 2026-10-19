@@ -242,12 +242,14 @@ class PaperTradingEngine:
                                     pos["stop_loss"] = lock_px
                                     pos["trailing_stage"] = "PROFIT_LOCK"
                                     logger.info(f"🔒 [PROFIT LOCK 25%] {sym}: Trailing SL raised to ₹{lock_px} (50% target move reached)")
-                            # Stage 1: Breakeven Protection (35%+ of target distance) -> Shift SL to Entry
+                            # Stage 1: True Breakeven Protection (35%+ of target distance) -> Shift SL to Entry + Charges Friction
                             elif gain_ratio >= 0.35:
-                                if pos["stop_loss"] < entry:
-                                    pos["stop_loss"] = round(entry, 2)
+                                friction = max(0.05, round(entry * 0.0006 + 0.05, 2))
+                                be_sl = round(entry + friction, 2)
+                                if pos["stop_loss"] < be_sl:
+                                    pos["stop_loss"] = be_sl
                                     pos["trailing_stage"] = "BREAKEVEN"
-                                    logger.info(f"🛡️ [BREAKEVEN] {sym}: SL trailed to Cost/Entry ₹{entry} (Capital Protected)")
+                                    logger.info(f"🛡️ [TRUE BREAKEVEN] {sym}: SL trailed to ₹{be_sl} (Covering round-trip charges ₹{friction}/sh)")
 
                         # Check Exit Conditions
                         is_cnc = pos.get("product_type", "MIS") == "CNC" or pos.get("trade_type") == "SWING"
@@ -259,7 +261,27 @@ class PaperTradingEngine:
                             stage = pos.get("trailing_stage", "INITIAL")
                             reason = "TRAILING_SL_HIT" if stage == "PROFIT_LOCK" else ("BREAKEVEN_EXIT" if stage == "BREAKEVEN" else "STOP_LOSS_HIT")
                             positions_to_close.append((pos["position_id"], reason, current_price))
-                        elif curr_vwap > 0 and not is_cnc:
+                        elif not is_cnc and pos.get("entry_time"):
+                            # ⏱️ Stagnation Time-Stop: If position has been open > 45 mins and is underwater (-0.35% or worse),
+                            # cut it early to avoid bleeding until 3:15 PM EOD square-off
+                            try:
+                                edt = datetime.fromisoformat(pos["entry_time"])
+                                if edt.tzinfo is None:
+                                    edt = edt.replace(tzinfo=timezone.utc)
+                                now_utc = now_ist.astimezone(timezone.utc)
+                                holding_mins = (now_utc - edt).total_seconds() / 60.0
+                                if holding_mins >= 45.0 and pos.get("unrealized_pnl", 0.0) < 0:
+                                    loss_pct = abs(pos.get("pnl_pct", 0.0))
+                                    if loss_pct >= 0.35:
+                                        logger.info(
+                                            f"⏱️ [STAGNATION EXIT] {sym}: Position underwater (-{loss_pct:.2f}%) after {holding_mins:.0f}m. "
+                                            f"Momentum failed to materialize. Executing early time-stop exit."
+                                        )
+                                        positions_to_close.append((pos["position_id"], "STAGNATION_EXIT", current_price))
+                            except Exception:
+                                pass
+
+                        if curr_vwap > 0 and not is_cnc and (pos["position_id"] not in [p[0] for p in positions_to_close]):
                             # ⚡ Sustained Thesis Invalidation: Requires at least 3 consecutive ticks below threshold
                             # to filter out deceptive 5-10 second liquidity sweep wicks
                             vwap_buffer = max(0.15, round(curr_vwap * 0.0025, 2))
@@ -319,12 +341,14 @@ class PaperTradingEngine:
                                     pos["stop_loss"] = lock_px
                                     pos["trailing_stage"] = "PROFIT_LOCK"
                                     logger.info(f"🔒 [PROFIT LOCK 25%] {sym}: Trailing SL lowered to ₹{lock_px} (50% target move reached)")
-                            # Stage 1: Breakeven Protection (35%+ of target distance) -> Shift SL to Entry
+                            # Stage 1: True Breakeven Protection (35%+ of target distance) -> Shift SL to Entry - Charges Friction
                             elif gain_ratio >= 0.35:
-                                if pos["stop_loss"] > entry:
-                                    pos["stop_loss"] = round(entry, 2)
+                                friction = max(0.05, round(entry * 0.0006 + 0.05, 2))
+                                be_sl = round(entry - friction, 2)
+                                if pos["stop_loss"] > be_sl:
+                                    pos["stop_loss"] = be_sl
                                     pos["trailing_stage"] = "BREAKEVEN"
-                                    logger.info(f"🛡️ [BREAKEVEN] {sym}: SL trailed to Cost/Entry ₹{entry} (Capital Protected)")
+                                    logger.info(f"🛡️ [TRUE BREAKEVEN] {sym}: SL trailed to ₹{be_sl} (Covering round-trip charges ₹{friction}/sh)")
 
                         # Check Exit Conditions
                         is_cnc = pos.get("product_type", "MIS") == "CNC" or pos.get("trade_type") == "SWING"
@@ -336,7 +360,27 @@ class PaperTradingEngine:
                             stage = pos.get("trailing_stage", "INITIAL")
                             reason = "TRAILING_SL_HIT" if stage == "PROFIT_LOCK" else ("BREAKEVEN_EXIT" if stage == "BREAKEVEN" else "STOP_LOSS_HIT")
                             positions_to_close.append((pos["position_id"], reason, current_price))
-                        elif curr_vwap > 0 and not is_cnc:
+                        elif not is_cnc and pos.get("entry_time"):
+                            # ⏱️ Stagnation Time-Stop: If position has been open > 45 mins and is underwater (-0.35% or worse),
+                            # cut it early to avoid bleeding until 3:15 PM EOD square-off
+                            try:
+                                edt = datetime.fromisoformat(pos["entry_time"])
+                                if edt.tzinfo is None:
+                                    edt = edt.replace(tzinfo=timezone.utc)
+                                now_utc = now_ist.astimezone(timezone.utc)
+                                holding_mins = (now_utc - edt).total_seconds() / 60.0
+                                if holding_mins >= 45.0 and pos.get("unrealized_pnl", 0.0) < 0:
+                                    loss_pct = abs(pos.get("pnl_pct", 0.0))
+                                    if loss_pct >= 0.35:
+                                        logger.info(
+                                            f"⏱️ [STAGNATION EXIT] {sym}: Short position underwater (-{loss_pct:.2f}%) after {holding_mins:.0f}m. "
+                                            f"Momentum failed to materialize. Executing early time-stop exit."
+                                        )
+                                        positions_to_close.append((pos["position_id"], "STAGNATION_EXIT", current_price))
+                            except Exception:
+                                pass
+
+                        if curr_vwap > 0 and not is_cnc and (pos["position_id"] not in [p[0] for p in positions_to_close]):
                             # ⚡ Sustained Thesis Invalidation: Requires at least 3 consecutive ticks above threshold
                             # to filter out deceptive 5-10 second liquidity sweep wicks
                             vwap_buffer = max(0.15, round(curr_vwap * 0.0025, 2))
@@ -505,6 +549,12 @@ class PaperTradingEngine:
             if tier not in ("A+", "A") or signal not in ("BUY", "SELL"):
                 continue
 
+            # Strict Index Alignment Guard: Block counter-trend setups opposing NIFTY trend
+            align_status = setup.get("alignment_status")
+            if align_status in ("COUNTER_TREND", "DIVERGENT"):
+                logger.info(f"🚫 [AUTO-ENTRY BLOCKED] {sym}: Setup {signal} is {align_status} against broad market trend.")
+                continue
+
             price = float(setup.get("price") or setup.get("entry_price", 0.0))
             if price <= 0:
                 continue
@@ -531,9 +581,13 @@ class PaperTradingEngine:
             allowed_margin = min(self.available_balance, max_alloc)
             margin_max_qty = max(1, int((allowed_margin * eff_lev) / max(price, 1.0)))
 
-            # 4. Enforce strict quantity cap:
-            # Must NEVER exceed risk_based_qty or margin_max_qty
-            final_qty = min(suggested_qty, risk_based_qty, margin_max_qty)
+            # 4. Turnover & Exposure Cap: Cap max position gross value to 1.25x total wallet budget
+            # Prevents outsized churn, huge STT/exchange charges, and excessive share quantities on lower-priced stocks
+            max_position_exposure = self.wallet_budget * 1.25
+            max_exposure_qty = max(1, int(max_position_exposure / max(price, 0.05)))
+
+            # Must NEVER exceed risk_based_qty, margin_max_qty, or max_exposure_qty
+            final_qty = min(suggested_qty, risk_based_qty, margin_max_qty, max_exposure_qty)
             if final_qty <= 0:
                 continue
 

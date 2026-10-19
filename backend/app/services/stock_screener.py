@@ -1020,8 +1020,9 @@ class StockScreenerService:
                     trend_5m = "BULLISH"
                     trend_15m = "BULLISH"
                     breakout = is_orb_breakout
-                    risk_pts = round(max(atr * 0.45, price * 0.006), 2)
-                    reward_pts = round(risk_pts * 2.1, 2)
+                    # Realistic Intraday Volatility Stop: Minimum 1.0% structural floor or 0.75x ATR to prevent noise whipsaws
+                    risk_pts = round(max(atr * 0.75, price * 0.010), 2)
+                    reward_pts = round(risk_pts * 1.6, 2)
                     stop_loss = round(price - risk_pts, 2)
                     target = round(price + reward_pts, 2)
                     setup_type = "Upstox Live VWAP Breakout & Retest"
@@ -1031,8 +1032,9 @@ class StockScreenerService:
                     trend_5m = "BEARISH"
                     trend_15m = "BEARISH"
                     breakout = is_orb_breakdown
-                    risk_pts = round(max(atr * 0.45, price * 0.006), 2)
-                    reward_pts = round(risk_pts * 2.1, 2)
+                    # Realistic Intraday Volatility Stop: Minimum 1.0% structural floor or 0.75x ATR
+                    risk_pts = round(max(atr * 0.75, price * 0.010), 2)
+                    reward_pts = round(risk_pts * 1.6, 2)
                     stop_loss = round(price + risk_pts, 2)
                     target = round(price - reward_pts, 2)
                     setup_type = "Upstox Live VWAP Breakdown & Rejection"
@@ -1100,6 +1102,11 @@ class StockScreenerService:
                 elif signal == "SELL":
                     is_index_aligned = False
                     alignment_status = "COUNTER_TREND"
+                    # Strict Institutional Rule: Never short stocks against a Bullish NIFTY trend!
+                    if not (is_alpha_breakout and relative_strength <= -0.80):
+                        signal = "NO_TRADE"
+                        setup_type = "Blocked: Counter-Trend to Bullish NIFTY"
+                        ai_score = min(ai_score, 52)
             elif nifty_status["trend"] == "BEARISH":
                 if signal == "SELL":
                     is_index_aligned = True
@@ -1107,6 +1114,11 @@ class StockScreenerService:
                 elif signal == "BUY":
                     is_index_aligned = False
                     alignment_status = "DIVERGENT"
+                    # Strict Institutional Rule: Never long buy stocks against a Bearish NIFTY trend!
+                    if not (is_alpha_breakout and relative_strength >= 0.80):
+                        signal = "NO_TRADE"
+                        setup_type = "Blocked: Divergent to Bearish NIFTY"
+                        ai_score = min(ai_score, 52)
 
             # Check Criteria Checklist with Relative Strength & Dynamic ATR
             checklist = [
@@ -1118,7 +1130,7 @@ class StockScreenerService:
                 {"rule": "Opening Range Breakout (ORB Buffer)", "passed": breakout},
                 {"rule": f"Anti-Chasing ATR Buffer ({atr_extension_ratio}x ATR <= 1.25x)", "passed": not is_extended},
                 {"rule": f"Relative Strength vs NIFTY ({relative_strength:+}%)", "passed": relative_strength >= 0.10 if signal == "BUY" else relative_strength <= -0.10},
-                {"rule": "Risk:Reward >= 1:2.0", "passed": reward_pts >= risk_pts * 1.95},
+                {"rule": "Risk:Reward >= 1:1.5", "passed": reward_pts >= risk_pts * 1.5},
                 {"rule": f"NSE Market Alignment ({alignment_status})", "passed": is_index_aligned or signal == "NO_TRADE" or is_alpha_breakout},
             ]
 
@@ -1167,8 +1179,13 @@ class StockScreenerService:
             max_buying_power = alloc_per_stock_max * effective_leverage
             margin_max_qty = max(1, int(max_buying_power / max(price, 0.05)))
 
-            # 4. Final Quantity is the MINIMUM of Risk-based Qty and Margin-capped Qty.
-            suggested_qty = max(1, min(risk_based_qty, margin_max_qty))
+            # 4. Turnover & Exposure Cap: Cap max position gross value to 1.25x total wallet budget
+            # Prevents outsized churn, huge STT/exchange charges, and excessive share quantities on lower-priced stocks
+            max_position_exposure = budget * 1.25
+            max_exposure_qty = max(1, int(max_position_exposure / max(price, 0.05)))
+
+            # Final Quantity is the MINIMUM of Risk-based Qty, Margin-capped Qty, and Exposure-capped Qty.
+            suggested_qty = max(1, min(risk_based_qty, margin_max_qty, max_exposure_qty))
 
             margin_required = round((suggested_qty * price) / effective_leverage, 2)
             final_risk_rs = round(suggested_qty * actual_risk_per_share, 2)

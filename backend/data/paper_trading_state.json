@@ -1,86 +1,85 @@
 {
-  "wallet_budget": 100000.0,
-  "available_balance": 25151.64,
-  "margin_locked": 74848.36,
+  "wallet_budget": 10000.0,
+  "available_balance": 13283.73,
+  "margin_locked": 1524.0,
   "auto_trading_enabled": true,
   "open_positions": [
     {
-      "position_id": "POS-8EB814E7",
-      "symbol": "VEDL",
+      "position_id": "POS-FCB3F6FC",
+      "symbol": "TATASTEEL",
       "side": "BUY",
-      "quantity": 465,
-      "entry_price": 268.4,
-      "current_price": 267.65,
-      "entry_vwap": 267.02,
-      "current_vwap": 267.08,
-      "initial_stop_loss": 265.43,
-      "stop_loss": 265.43,
-      "target_price": 274.64,
-      "highest_price": 268.4,
-      "lowest_price": 268.4,
+      "quantity": 50,
+      "entry_price": 152.4,
+      "current_price": 152.4,
+      "entry_vwap": 152.4,
+      "current_vwap": 152.4,
+      "ema9": 152.1,
+      "ema20": 151.64,
+      "retest_level": 151.79,
+      "rvol": 1.85,
+      "market_structure": "HH_HL",
+      "ai_score": 86,
+      "price_action_score": 18,
+      "setup_checklist": [
+        {
+          "rule": "VWAP Breakout Buffer (+0.10%)",
+          "passed": true,
+          "detail": "Price \u20b9152.40 confirmed above VWAP \u20b9152.40"
+        },
+        {
+          "rule": "EMA 9 > EMA 20 Momentum Ribbon",
+          "passed": true,
+          "detail": "EMA 9 (\u20b9152.10) > EMA 20 (\u20b9151.64)"
+        },
+        {
+          "rule": "Institutional Volume Surge (1.85x RVOL)",
+          "passed": true,
+          "detail": "1.85x Relative Volume confirmed on breakout"
+        },
+        {
+          "rule": "Market Structure (HH_HL)",
+          "passed": true,
+          "detail": "Constructive Higher Highs & Higher Lows sequence"
+        },
+        {
+          "rule": "Key Breakout & S/R Retest",
+          "passed": true,
+          "detail": "Prior resistance flipped to support near \u20b9151.79"
+        },
+        {
+          "rule": "NIFTY 50 Index Alignment",
+          "passed": true,
+          "detail": "Sector and market trend aligned with trade direction"
+        },
+        {
+          "rule": "Anti-Chasing ATR Guard",
+          "passed": true,
+          "detail": "Price within acceptable ATR distance from VWAP"
+        },
+        {
+          "rule": "Strict 1:2+ Risk:Reward",
+          "passed": true,
+          "detail": "Risk \u20b93.40 : Reward \u20b97.60"
+        }
+      ],
+      "change_pct": 0.0,
+      "sector": "NSE Equity",
+      "initial_stop_loss": 149.0,
+      "stop_loss": 149.0,
+      "target_price": 160.0,
+      "highest_price": 152.4,
+      "lowest_price": 152.4,
       "trailing_stage": "INITIAL",
       "vwap_breach_count": 0,
-      "margin_required": 24961.2,
-      "unrealized_pnl": -348.75,
-      "pnl_pct": -0.28,
-      "setup_type": "Alpha Breakout (RS: +1.83%, RVOL: 5.0x)",
-      "setup_tier": "A+",
+      "margin_required": 1524.0,
+      "unrealized_pnl": 0.0,
+      "pnl_pct": 0.0,
+      "setup_type": "VWAP Breakout",
+      "setup_tier": "A",
       "product_type": "MIS",
       "source": "UPSTOX_LIVE",
-      "entry_time": "2026-09-23T04:36:28.572428+00:00",
-      "last_updated": "2026-09-23T04:51:57.184610+00:00"
-    },
-    {
-      "position_id": "POS-8AF28473",
-      "symbol": "COALINDIA",
-      "side": "SELL",
-      "quantity": 293,
-      "entry_price": 425.4,
-      "current_price": 424.15,
-      "entry_vwap": 426.34,
-      "current_vwap": 426.13,
-      "initial_stop_loss": 427.95,
-      "stop_loss": 427.95,
-      "target_price": 420.05,
-      "highest_price": 425.4,
-      "lowest_price": 423.95,
-      "trailing_stage": "INITIAL",
-      "vwap_breach_count": 0,
-      "margin_required": 24928.44,
-      "unrealized_pnl": 366.25,
-      "pnl_pct": 0.29,
-      "setup_type": "Alpha Breakout (RS: -0.83%, RVOL: 5.0x)",
-      "setup_tier": "A+",
-      "product_type": "MIS",
-      "source": "UPSTOX_LIVE",
-      "entry_time": "2026-09-23T04:36:28.573293+00:00",
-      "last_updated": "2026-09-23T04:51:57.184626+00:00"
-    },
-    {
-      "position_id": "POS-C39395C1",
-      "symbol": "BHEL",
-      "side": "SELL",
-      "quantity": 296,
-      "entry_price": 421.6,
-      "current_price": 422.4,
-      "entry_vwap": 424.94,
-      "current_vwap": 424.56,
-      "initial_stop_loss": 424.66,
-      "stop_loss": 424.66,
-      "target_price": 415.17,
-      "highest_price": 421.6,
-      "lowest_price": 420.75,
-      "trailing_stage": "INITIAL",
-      "vwap_breach_count": 0,
-      "margin_required": 24958.72,
-      "unrealized_pnl": -236.8,
-      "pnl_pct": -0.19,
-      "setup_type": "Alpha Breakout (RS: -1.12%, RVOL: 2.44x)",
-      "setup_tier": "A+",
-      "product_type": "MIS",
-      "source": "UPSTOX_LIVE",
-      "entry_time": "2026-09-23T04:43:17.996331+00:00",
-      "last_updated": "2026-09-23T04:51:57.184635+00:00"
+      "entry_time": "2026-10-17T13:13:38.353102+00:00",
+      "last_updated": "2026-10-17T13:13:38.353102+00:00"
     }
   ],
   "closed_trades": [
@@ -871,7 +870,328 @@
       "setup_tier": "A+",
       "product_type": "MIS",
       "trailing_stage": "BREAKEVEN"
+    },
+    {
+      "trade_id": "POS-8EB814E7",
+      "symbol": "VEDL",
+      "side": "BUY",
+      "quantity": 465,
+      "entry_price": 268.4,
+      "exit_price": 267.65,
+      "entry_time": "2026-09-23T04:36:28.572428+00:00",
+      "exit_time": "2026-10-17T18:32:40.629656+05:30",
+      "date": "2026-10-17",
+      "gross_pnl": -348.75,
+      "charges": 91.03,
+      "net_pnl": -439.78,
+      "exit_reason": "INTRADAY_SQUARE_OFF",
+      "setup_type": "Alpha Breakout (RS: +1.83%, RVOL: 5.0x)",
+      "setup_tier": "A+",
+      "product_type": "MIS",
+      "trailing_stage": "INITIAL",
+      "initial_stop_loss": 265.43,
+      "stop_loss": 265.43,
+      "target_price": 274.64,
+      "entry_vwap": 267.02,
+      "ema9": 267.86,
+      "ema20": 267.06,
+      "retest_level": 267.33,
+      "rvol": 1.85,
+      "market_structure": "HH_HL",
+      "ai_score": 86,
+      "price_action_score": 18,
+      "setup_checklist": [],
+      "change_pct": 0.0,
+      "sector": "NSE Equity"
+    },
+    {
+      "trade_id": "POS-8AF28473",
+      "symbol": "COALINDIA",
+      "side": "SELL",
+      "quantity": 293,
+      "entry_price": 425.4,
+      "exit_price": 424.15,
+      "entry_time": "2026-09-23T04:36:28.573293+00:00",
+      "exit_time": "2026-10-17T18:32:40.630639+05:30",
+      "date": "2026-10-17",
+      "gross_pnl": 366.25,
+      "charges": 91.06,
+      "net_pnl": 275.19,
+      "exit_reason": "INTRADAY_SQUARE_OFF",
+      "setup_type": "Alpha Breakout (RS: -0.83%, RVOL: 5.0x)",
+      "setup_tier": "A+",
+      "product_type": "MIS",
+      "trailing_stage": "INITIAL",
+      "initial_stop_loss": 427.95,
+      "stop_loss": 427.95,
+      "target_price": 420.05,
+      "entry_vwap": 426.34,
+      "ema9": 424.55,
+      "ema20": 423.27,
+      "retest_level": 423.7,
+      "rvol": 1.85,
+      "market_structure": "LH_LL",
+      "ai_score": 86,
+      "price_action_score": 18,
+      "setup_checklist": [],
+      "change_pct": 0.0,
+      "sector": "NSE Equity"
+    },
+    {
+      "trade_id": "POS-C39395C1",
+      "symbol": "BHEL",
+      "side": "SELL",
+      "quantity": 296,
+      "entry_price": 421.6,
+      "exit_price": 422.4,
+      "entry_time": "2026-09-23T04:43:17.996331+00:00",
+      "exit_time": "2026-10-17T18:32:40.631588+05:30",
+      "date": "2026-10-17",
+      "gross_pnl": -236.8,
+      "charges": 91.16,
+      "net_pnl": -327.96,
+      "exit_reason": "INTRADAY_SQUARE_OFF",
+      "setup_type": "Alpha Breakout (RS: -1.12%, RVOL: 2.44x)",
+      "setup_tier": "A+",
+      "product_type": "MIS",
+      "trailing_stage": "INITIAL",
+      "initial_stop_loss": 424.66,
+      "stop_loss": 424.66,
+      "target_price": 415.17,
+      "entry_vwap": 424.94,
+      "ema9": 420.76,
+      "ema20": 419.49,
+      "retest_level": 419.91,
+      "rvol": 1.85,
+      "market_structure": "LH_LL",
+      "ai_score": 86,
+      "price_action_score": 18,
+      "setup_checklist": [],
+      "change_pct": 0.0,
+      "sector": "NSE Equity"
+    },
+    {
+      "trade_id": "POS-89619E42",
+      "symbol": "TATASTEEL",
+      "side": "BUY",
+      "quantity": 50,
+      "entry_price": 152.4,
+      "exit_price": 188.0,
+      "entry_time": "2026-10-17T13:02:41.205738+00:00",
+      "exit_time": "2026-10-17T18:39:20.429359+05:30",
+      "date": "2026-10-17",
+      "gross_pnl": 1780.0,
+      "charges": 13.24,
+      "net_pnl": 1766.76,
+      "exit_reason": "INTRADAY_SQUARE_OFF",
+      "setup_type": "VWAP Breakout",
+      "setup_tier": "A",
+      "product_type": "MIS",
+      "trailing_stage": "PROFIT_LOCK",
+      "initial_stop_loss": 149.0,
+      "stop_loss": 157.72,
+      "target_price": 160.0,
+      "entry_vwap": 152.4,
+      "ema9": 152.1,
+      "ema20": 151.64,
+      "retest_level": 151.79,
+      "rvol": 1.85,
+      "market_structure": "HH_HL",
+      "ai_score": 86,
+      "price_action_score": 18,
+      "setup_checklist": [
+        {
+          "rule": "VWAP Breakout Buffer (+0.10%)",
+          "passed": true,
+          "detail": "Price \u20b9152.40 confirmed above VWAP \u20b9152.40"
+        },
+        {
+          "rule": "EMA 9 > EMA 20 Momentum Ribbon",
+          "passed": true,
+          "detail": "EMA 9 (\u20b9152.10) > EMA 20 (\u20b9151.64)"
+        },
+        {
+          "rule": "Institutional Volume Surge (1.85x RVOL)",
+          "passed": true,
+          "detail": "1.85x Relative Volume confirmed on breakout"
+        },
+        {
+          "rule": "Market Structure (HH_HL)",
+          "passed": true,
+          "detail": "Constructive Higher Highs & Higher Lows sequence"
+        },
+        {
+          "rule": "Key Breakout & S/R Retest",
+          "passed": true,
+          "detail": "Prior resistance flipped to support near \u20b9151.79"
+        },
+        {
+          "rule": "NIFTY 50 Index Alignment",
+          "passed": true,
+          "detail": "Sector and market trend aligned with trade direction"
+        },
+        {
+          "rule": "Anti-Chasing ATR Guard",
+          "passed": true,
+          "detail": "Price within acceptable ATR distance from VWAP"
+        },
+        {
+          "rule": "Strict 1:2+ Risk:Reward",
+          "passed": true,
+          "detail": "Risk \u20b93.40 : Reward \u20b97.60"
+        }
+      ],
+      "change_pct": 0.0,
+      "sector": "NSE Equity"
+    },
+    {
+      "trade_id": "POS-18EC7126",
+      "symbol": "TATASTEEL",
+      "side": "BUY",
+      "quantity": 50,
+      "entry_price": 152.4,
+      "exit_price": 188.0,
+      "entry_time": "2026-10-17T13:09:20.784243+00:00",
+      "exit_time": "2026-10-17T18:41:48.367038+05:30",
+      "date": "2026-10-17",
+      "gross_pnl": 1780.0,
+      "charges": 13.24,
+      "net_pnl": 1766.76,
+      "exit_reason": "INTRADAY_SQUARE_OFF",
+      "setup_type": "VWAP Breakout",
+      "setup_tier": "A",
+      "product_type": "MIS",
+      "trailing_stage": "PROFIT_LOCK",
+      "initial_stop_loss": 149.0,
+      "stop_loss": 157.72,
+      "target_price": 160.0,
+      "entry_vwap": 152.4,
+      "ema9": 152.1,
+      "ema20": 151.64,
+      "retest_level": 151.79,
+      "rvol": 1.85,
+      "market_structure": "HH_HL",
+      "ai_score": 86,
+      "price_action_score": 18,
+      "setup_checklist": [
+        {
+          "rule": "VWAP Breakout Buffer (+0.10%)",
+          "passed": true,
+          "detail": "Price \u20b9152.40 confirmed above VWAP \u20b9152.40"
+        },
+        {
+          "rule": "EMA 9 > EMA 20 Momentum Ribbon",
+          "passed": true,
+          "detail": "EMA 9 (\u20b9152.10) > EMA 20 (\u20b9151.64)"
+        },
+        {
+          "rule": "Institutional Volume Surge (1.85x RVOL)",
+          "passed": true,
+          "detail": "1.85x Relative Volume confirmed on breakout"
+        },
+        {
+          "rule": "Market Structure (HH_HL)",
+          "passed": true,
+          "detail": "Constructive Higher Highs & Higher Lows sequence"
+        },
+        {
+          "rule": "Key Breakout & S/R Retest",
+          "passed": true,
+          "detail": "Prior resistance flipped to support near \u20b9151.79"
+        },
+        {
+          "rule": "NIFTY 50 Index Alignment",
+          "passed": true,
+          "detail": "Sector and market trend aligned with trade direction"
+        },
+        {
+          "rule": "Anti-Chasing ATR Guard",
+          "passed": true,
+          "detail": "Price within acceptable ATR distance from VWAP"
+        },
+        {
+          "rule": "Strict 1:2+ Risk:Reward",
+          "passed": true,
+          "detail": "Risk \u20b93.40 : Reward \u20b97.60"
+        }
+      ],
+      "change_pct": 0.0,
+      "sector": "NSE Equity"
+    },
+    {
+      "trade_id": "POS-521D7990",
+      "symbol": "TATASTEEL",
+      "side": "BUY",
+      "quantity": 50,
+      "entry_price": 152.4,
+      "exit_price": 188.0,
+      "entry_time": "2026-10-17T13:11:48.952083+00:00",
+      "exit_time": "2026-10-17T18:43:37.959421+05:30",
+      "date": "2026-10-17",
+      "gross_pnl": 1780.0,
+      "charges": 13.24,
+      "net_pnl": 1766.76,
+      "exit_reason": "INTRADAY_SQUARE_OFF",
+      "setup_type": "VWAP Breakout",
+      "setup_tier": "A",
+      "product_type": "MIS",
+      "trailing_stage": "PROFIT_LOCK",
+      "initial_stop_loss": 149.0,
+      "stop_loss": 157.72,
+      "target_price": 160.0,
+      "entry_vwap": 152.4,
+      "ema9": 152.1,
+      "ema20": 151.64,
+      "retest_level": 151.79,
+      "rvol": 1.85,
+      "market_structure": "HH_HL",
+      "ai_score": 86,
+      "price_action_score": 18,
+      "setup_checklist": [
+        {
+          "rule": "VWAP Breakout Buffer (+0.10%)",
+          "passed": true,
+          "detail": "Price \u20b9152.40 confirmed above VWAP \u20b9152.40"
+        },
+        {
+          "rule": "EMA 9 > EMA 20 Momentum Ribbon",
+          "passed": true,
+          "detail": "EMA 9 (\u20b9152.10) > EMA 20 (\u20b9151.64)"
+        },
+        {
+          "rule": "Institutional Volume Surge (1.85x RVOL)",
+          "passed": true,
+          "detail": "1.85x Relative Volume confirmed on breakout"
+        },
+        {
+          "rule": "Market Structure (HH_HL)",
+          "passed": true,
+          "detail": "Constructive Higher Highs & Higher Lows sequence"
+        },
+        {
+          "rule": "Key Breakout & S/R Retest",
+          "passed": true,
+          "detail": "Prior resistance flipped to support near \u20b9151.79"
+        },
+        {
+          "rule": "NIFTY 50 Index Alignment",
+          "passed": true,
+          "detail": "Sector and market trend aligned with trade direction"
+        },
+        {
+          "rule": "Anti-Chasing ATR Guard",
+          "passed": true,
+          "detail": "Price within acceptable ATR distance from VWAP"
+        },
+        {
+          "rule": "Strict 1:2+ Risk:Reward",
+          "passed": true,
+          "detail": "Risk \u20b93.40 : Reward \u20b97.60"
+        }
+      ],
+      "change_pct": 0.0,
+      "sector": "NSE Equity"
     }
   ],
-  "last_updated": "2026-10-03T04:39:32.521857+00:00"
+  "last_updated": "2026-10-17T13:13:38.355184+00:00"
 }

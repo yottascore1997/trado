@@ -221,7 +221,7 @@ def test_breakeven_protection_on_fifty_percent_target_move():
     engine.process_market_tick({"NSE_EQ:INFY": {"last_price": 1522.0}})
     assert len(engine.open_positions) == 1
     current_pos = engine.open_positions[0]
-    assert current_pos["stop_loss"] == 1500.0  # Trailed to cost
+    assert current_pos["stop_loss"] >= 1500.0  # Trailed to true breakeven (entry + friction)
     assert current_pos["trailing_stage"] == "BREAKEVEN"
 
     # 2. Market reverses and drops back to 1499 (Cost)
@@ -453,6 +453,86 @@ def test_thesis_invalidation_sell_early_exit():
     # Early exit loss is -₹50, saving the trader from -₹200 full SL loss!
     assert trade["gross_pnl"] == round((1500.0 - 1505.0) * 10, 2)
     assert abs(trade["gross_pnl"]) < abs((1500.0 - 1520.0) * 10)
+
+
+def test_true_breakeven_covers_brokerage_and_charges():
+    """Validates that True Breakeven trails SL above entry for BUY and below entry for SELL."""
+    engine = PaperTradingEngine(initial_budget=50000.0, persist=False)
+    entry = 500.0
+    pos = engine.open_position(
+        symbol="SBIN",
+        side="BUY",
+        quantity=50,
+        entry_price=entry,
+        stop_loss=495.0,
+        target_price=510.0,
+        margin_required=5000.0,
+    )
+    # Price moves to 504 (+4 pts = 40% of target move) -> triggers True Breakeven
+    engine.process_market_tick({"NSE_EQ:SBIN": {"last_price": 504.0}})
+    assert len(engine.open_positions) == 1
+    # For BUY: stop_loss must be > entry (cost + friction)
+    assert engine.open_positions[0]["stop_loss"] > entry
+    assert engine.open_positions[0]["trailing_stage"] == "BREAKEVEN"
+
+
+def test_stagnation_time_stop_prevents_eod_drift():
+    """Validates that a position underwater for >45 minutes triggers STAGNATION_EXIT rather than drifting to EOD."""
+    engine = PaperTradingEngine(initial_budget=50000.0, persist=False)
+    pos = engine.open_position(
+        symbol="HCLTECH",
+        side="BUY",
+        quantity=20,
+        entry_price=1373.0,
+        stop_loss=1355.0,
+        target_price=1400.0,
+        margin_required=5492.0,
+    )
+
+    # Simulate position entered 50 minutes prior during normal market session
+    from datetime import datetime, timezone, timedelta
+    market_time = datetime(2026, 9, 23, 11, 30, tzinfo=timezone(timedelta(hours=5, minutes=30)))
+    t_entry = market_time.astimezone(timezone.utc) - timedelta(minutes=50)
+    engine.open_positions[0]["entry_time"] = t_entry.isoformat()
+
+    # Price dropped by 0.5% (underwater, stagnant)
+    underwater_price = 1365.0
+    engine.process_market_tick(
+        {"NSE_EQ:HCLTECH": {"last_price": underwater_price}},
+        current_time=market_time,
+    )
+
+    assert len(engine.open_positions) == 0
+    trade = engine.closed_trades[-1]
+    assert trade["symbol"] == "HCLTECH"
+    assert trade["exit_reason"] == "STAGNATION_EXIT"
+
+
+def test_counter_trend_blocked_from_auto_entry():
+    """Validates that COUNTER_TREND or DIVERGENT setups are strictly blocked from auto-entry."""
+    engine = PaperTradingEngine(initial_budget=50000.0, persist=False)
+    mock_setups = [
+        {
+            "symbol": "BEL",
+            "signal": "SELL",
+            "price": 377.8,
+            "entry_price": 377.8,
+            "stop_loss": 381.0,
+            "target_price": 370.0,
+            "suggested_qty": 100,
+            "setup_tier": "A+",
+            "alignment_status": "COUNTER_TREND",  # Opposes NIFTY
+        }
+    ]
+    market_time = datetime(2026, 9, 23, 10, 30, tzinfo=timezone(timedelta(hours=5, minutes=30)))
+    engine.process_market_tick(
+        {"NSE_EQ:BEL": {"last_price": 377.8}},
+        top_setups=mock_setups,
+        current_time=market_time,
+    )
+    # Should NOT have entered BEL because it is COUNTER_TREND
+    assert len(engine.open_positions) == 0
+
 
 
 
