@@ -550,10 +550,32 @@ class PaperTradingEngine:
                 continue
 
             # Strict Index Alignment Guard: Block counter-trend setups opposing NIFTY trend
-            align_status = setup.get("alignment_status")
-            if align_status in ("COUNTER_TREND", "DIVERGENT"):
+            align_status = setup.get("alignment_status", "ALIGNED")
+            if align_status in ("COUNTER_TREND", "DIVERGENT", "CHOP_CAUTION", "BLOCKED_BEARISH_NIFTY", "BLOCKED_BULLISH_NIFTY"):
                 logger.info(f"🚫 [AUTO-ENTRY BLOCKED] {sym}: Setup {signal} is {align_status} against broad market trend.")
                 continue
+
+            if setup.get("index_aligned") is False:
+                logger.info(f"🚫 [AUTO-ENTRY BLOCKED] {sym}: Setup {signal} lacks confirmed index alignment.")
+                continue
+
+            # Direct Real-Time NIFTY 50 Benchmark Guard:
+            # Prevents taking Long BUY when NIFTY is below VWAP, or Short SELL when NIFTY is above VWAP
+            nifty_quote = live_quotes.get("NSE_INDEX:Nifty 50") or live_quotes.get("NSE_INDEX|Nifty 50")
+            if nifty_quote and "last_price" in nifty_quote and "NIFTY" not in sym and "BANKNIFTY" not in sym:
+                n_ltp = float(nifty_quote["last_price"])
+                n_ohlc = nifty_quote.get("ohlc", {})
+                n_open = float(n_ohlc.get("open", n_ltp))
+                n_high = float(n_ohlc.get("high", n_ltp))
+                n_low = float(n_ohlc.get("low", n_ltp))
+                n_vwap = round((n_open + n_high + n_low + n_ltp) / 4.0, 1) if n_open > 0 else n_ltp
+
+                if n_ltp < n_vwap and signal == "BUY":
+                    logger.info(f"🚫 [REAL-TIME NIFTY GUARD] {sym}: Blocked Long BUY because NIFTY 50 (₹{n_ltp}) is below VWAP (₹{n_vwap}).")
+                    continue
+                if n_ltp > n_vwap and signal == "SELL":
+                    logger.info(f"🚫 [REAL-TIME NIFTY GUARD] {sym}: Blocked Short SELL because NIFTY 50 (₹{n_ltp}) is above VWAP (₹{n_vwap}).")
+                    continue
 
             price = float(setup.get("price") or setup.get("entry_price", 0.0))
             if price <= 0:
@@ -568,7 +590,9 @@ class PaperTradingEngine:
             from app.services.trading_plan_manager import trading_plan_manager
             active_plan = trading_plan_manager.get_plan()
             risk_pct = float(active_plan.get("risk_per_trade_pct", 1.5))
-            max_capital_risk = round(self.wallet_budget * (risk_pct / 100.0), 2)
+            raw_capital_risk = round(self.wallet_budget * (risk_pct / 100.0), 2)
+            # Capped at ₹3,000 for large budgets to avoid outsized single-trade hits
+            max_capital_risk = min(raw_capital_risk, 3000.0) if self.wallet_budget > 50000.0 else raw_capital_risk
 
             # 2. Risk per share = |Entry - SL|
             risk_per_share = max(0.05, abs(price - sl))
@@ -581,13 +605,16 @@ class PaperTradingEngine:
             allowed_margin = min(self.available_balance, max_alloc)
             margin_max_qty = max(1, int((allowed_margin * eff_lev) / max(price, 1.0)))
 
-            # 4. Turnover & Exposure Cap: Cap max position gross value to 1.25x total wallet budget
+            # 4. Turnover & Exposure Cap: Cap max position gross value to 1.25x total wallet budget (max ₹2,50,000)
             # Prevents outsized churn, huge STT/exchange charges, and excessive share quantities on lower-priced stocks
-            max_position_exposure = self.wallet_budget * 1.25
+            max_position_exposure = min(self.wallet_budget * 1.25, 250000.0) if self.wallet_budget > 50000.0 else self.wallet_budget * 1.25
             max_exposure_qty = max(1, int(max_position_exposure / max(price, 0.05)))
 
-            # Must NEVER exceed risk_based_qty, margin_max_qty, or max_exposure_qty
-            final_qty = min(suggested_qty, risk_based_qty, margin_max_qty, max_exposure_qty)
+            # 5. Low-Priced Stock Quantity Cap (Prevents 10,000+ shares on stocks like PNB)
+            max_shares_cap = 2000 if price < 250.0 else 5000
+
+            # Must NEVER exceed risk_based_qty, margin_max_qty, max_exposure_qty, or max_shares_cap
+            final_qty = min(suggested_qty, risk_based_qty, margin_max_qty, max_exposure_qty, max_shares_cap)
             if final_qty <= 0:
                 continue
 

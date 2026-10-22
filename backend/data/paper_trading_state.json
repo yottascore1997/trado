@@ -1,11 +1,11 @@
 {
   "wallet_budget": 10000.0,
-  "available_balance": 13283.73,
+  "available_balance": 13776.28,
   "margin_locked": 1524.0,
   "auto_trading_enabled": true,
   "open_positions": [
     {
-      "position_id": "POS-FCB3F6FC",
+      "position_id": "POS-BDC84B27",
       "symbol": "TATASTEEL",
       "side": "BUY",
       "quantity": 50,
@@ -78,8 +78,8 @@
       "setup_tier": "A",
       "product_type": "MIS",
       "source": "UPSTOX_LIVE",
-      "entry_time": "2026-10-17T13:13:38.353102+00:00",
-      "last_updated": "2026-10-17T13:13:38.353102+00:00"
+      "entry_time": "2026-10-22T02:52:05.733725+00:00",
+      "last_updated": "2026-10-22T02:52:05.733725+00:00"
     }
   ],
   "closed_trades": [
@@ -1191,7 +1191,303 @@
       ],
       "change_pct": 0.0,
       "sector": "NSE Equity"
+    },
+    {
+      "trade_id": "POS-FCB3F6FC",
+      "symbol": "TATASTEEL",
+      "side": "BUY",
+      "quantity": 50,
+      "entry_price": 152.4,
+      "exit_price": 188.0,
+      "entry_time": "2026-10-17T13:13:38.353102+00:00",
+      "exit_time": "2026-10-21T23:54:49.012894+05:30",
+      "date": "2026-10-21",
+      "gross_pnl": 1780.0,
+      "charges": 13.24,
+      "net_pnl": 1766.76,
+      "exit_reason": "INTRADAY_SQUARE_OFF",
+      "setup_type": "VWAP Breakout",
+      "setup_tier": "A",
+      "product_type": "MIS",
+      "trailing_stage": "PROFIT_LOCK",
+      "initial_stop_loss": 149.0,
+      "stop_loss": 157.72,
+      "target_price": 160.0,
+      "entry_vwap": 152.4,
+      "ema9": 152.1,
+      "ema20": 151.64,
+      "retest_level": 151.79,
+      "rvol": 1.85,
+      "market_structure": "HH_HL",
+      "ai_score": 86,
+      "price_action_score": 18,
+      "setup_checklist": [
+        {
+          "rule": "VWAP Breakout Buffer (+0.10%)",
+          "passed": true,
+          "detail": "Price \u20b9152.40 confirmed above VWAP \u20b9152.40"
+        },
+        {
+          "rule": "EMA 9 > EMA 20 Momentum Ribbon",
+          "passed": true,
+          "detail": "EMA 9 (\u20b9152.10) > EMA 20 (\u20b9151.64)"
+        },
+        {
+          "rule": "Institutional Volume Surge (1.85x RVOL)",
+          "passed": true,
+          "detail": "1.85x Relative Volume confirmed on breakout"
+        },
+        {
+          "rule": "Market Structure (HH_HL)",
+          "passed": true,
+          "detail": "Constructive Higher Highs & Higher Lows sequence"
+        },
+        {
+          "rule": "Key Breakout & S/R Retest",
+          "passed": true,
+          "detail": "Prior resistance flipped to support near \u20b9151.79"
+        },
+        {
+          "rule": "NIFTY 50 Index Alignment",
+          "passed": true,
+          "detail": "Sector and market trend aligned with trade direction"
+        },
+        {
+          "rule": "Anti-Chasing ATR Guard",
+          "passed": true,
+          "detail": "Price within acceptable ATR distance from VWAP"
+        },
+        {
+          "rule": "Strict 1:2+ Risk:Reward",
+          "passed": true,
+          "detail": "Risk \u20b93.40 : Reward \u20b97.60"
+        }
+      ],
+      "change_pct": 0.0,
+      "sector": "NSE Equity"
+    },
+    {
+      "trade_id": "POS-BDC75F23",
+      "symbol": "TATASTEEL",
+      "side": "BUY",
+      "quantity": 50,
+      "entry_price": 152.4,
+      "exit_price": 188.0,
+      "entry_time": "2026-10-21T18:24:49.419247+00:00",
+      "exit_time": "2026-10-22T00:00:50.129296+05:30",
+      "date": "2026-10-22",
+      "gross_pnl": 1780.0,
+      "charges": 13.24,
+      "net_pnl": 1766.76,
+      "exit_reason": "TARGET_HIT",
+      "setup_type": "VWAP Breakout",
+      "setup_tier": "A",
+      "product_type": "MIS",
+      "trailing_stage": "PROFIT_LOCK",
+      "initial_stop_loss": 149.0,
+      "stop_loss": 157.72,
+      "target_price": 160.0,
+      "entry_vwap": 152.4,
+      "ema9": 152.1,
+      "ema20": 151.64,
+      "retest_level": 151.79,
+      "rvol": 1.85,
+      "market_structure": "HH_HL",
+      "ai_score": 86,
+      "price_action_score": 18,
+      "setup_checklist": [
+        {
+          "rule": "VWAP Breakout Buffer (+0.10%)",
+          "passed": true,
+          "detail": "Price \u20b9152.40 confirmed above VWAP \u20b9152.40"
+        },
+        {
+          "rule": "EMA 9 > EMA 20 Momentum Ribbon",
+          "passed": true,
+          "detail": "EMA 9 (\u20b9152.10) > EMA 20 (\u20b9151.64)"
+        },
+        {
+          "rule": "Institutional Volume Surge (1.85x RVOL)",
+          "passed": true,
+          "detail": "1.85x Relative Volume confirmed on breakout"
+        },
+        {
+          "rule": "Market Structure (HH_HL)",
+          "passed": true,
+          "detail": "Constructive Higher Highs & Higher Lows sequence"
+        },
+        {
+          "rule": "Key Breakout & S/R Retest",
+          "passed": true,
+          "detail": "Prior resistance flipped to support near \u20b9151.79"
+        },
+        {
+          "rule": "NIFTY 50 Index Alignment",
+          "passed": true,
+          "detail": "Sector and market trend aligned with trade direction"
+        },
+        {
+          "rule": "Anti-Chasing ATR Guard",
+          "passed": true,
+          "detail": "Price within acceptable ATR distance from VWAP"
+        },
+        {
+          "rule": "Strict 1:2+ Risk:Reward",
+          "passed": true,
+          "detail": "Risk \u20b93.40 : Reward \u20b97.60"
+        }
+      ],
+      "change_pct": 0.0,
+      "sector": "NSE Equity"
+    },
+    {
+      "trade_id": "POS-9E44F13A",
+      "symbol": "TATASTEEL",
+      "side": "BUY",
+      "quantity": 50,
+      "entry_price": 152.4,
+      "exit_price": 188.0,
+      "entry_time": "2026-10-21T18:32:26.970202+00:00",
+      "exit_time": "2026-10-22T08:10:59.200462+05:30",
+      "date": "2026-10-22",
+      "gross_pnl": 1780.0,
+      "charges": 13.24,
+      "net_pnl": 1766.76,
+      "exit_reason": "TARGET_HIT",
+      "setup_type": "VWAP Breakout",
+      "setup_tier": "A",
+      "product_type": "MIS",
+      "trailing_stage": "PROFIT_LOCK",
+      "initial_stop_loss": 149.0,
+      "stop_loss": 157.72,
+      "target_price": 160.0,
+      "entry_vwap": 152.4,
+      "ema9": 152.1,
+      "ema20": 151.64,
+      "retest_level": 151.79,
+      "rvol": 1.85,
+      "market_structure": "HH_HL",
+      "ai_score": 86,
+      "price_action_score": 18,
+      "setup_checklist": [
+        {
+          "rule": "VWAP Breakout Buffer (+0.10%)",
+          "passed": true,
+          "detail": "Price \u20b9152.40 confirmed above VWAP \u20b9152.40"
+        },
+        {
+          "rule": "EMA 9 > EMA 20 Momentum Ribbon",
+          "passed": true,
+          "detail": "EMA 9 (\u20b9152.10) > EMA 20 (\u20b9151.64)"
+        },
+        {
+          "rule": "Institutional Volume Surge (1.85x RVOL)",
+          "passed": true,
+          "detail": "1.85x Relative Volume confirmed on breakout"
+        },
+        {
+          "rule": "Market Structure (HH_HL)",
+          "passed": true,
+          "detail": "Constructive Higher Highs & Higher Lows sequence"
+        },
+        {
+          "rule": "Key Breakout & S/R Retest",
+          "passed": true,
+          "detail": "Prior resistance flipped to support near \u20b9151.79"
+        },
+        {
+          "rule": "NIFTY 50 Index Alignment",
+          "passed": true,
+          "detail": "Sector and market trend aligned with trade direction"
+        },
+        {
+          "rule": "Anti-Chasing ATR Guard",
+          "passed": true,
+          "detail": "Price within acceptable ATR distance from VWAP"
+        },
+        {
+          "rule": "Strict 1:2+ Risk:Reward",
+          "passed": true,
+          "detail": "Risk \u20b93.40 : Reward \u20b97.60"
+        }
+      ],
+      "change_pct": 0.0,
+      "sector": "NSE Equity"
+    },
+    {
+      "trade_id": "POS-A779F5AE",
+      "symbol": "TATASTEEL",
+      "side": "BUY",
+      "quantity": 50,
+      "entry_price": 152.4,
+      "exit_price": 188.0,
+      "entry_time": "2026-10-22T02:40:59.605430+00:00",
+      "exit_time": "2026-10-22T08:22:05.696340+05:30",
+      "date": "2026-10-22",
+      "gross_pnl": 1780.0,
+      "charges": 13.24,
+      "net_pnl": 1766.76,
+      "exit_reason": "TARGET_HIT",
+      "setup_type": "VWAP Breakout",
+      "setup_tier": "A",
+      "product_type": "MIS",
+      "trailing_stage": "PROFIT_LOCK",
+      "initial_stop_loss": 149.0,
+      "stop_loss": 157.72,
+      "target_price": 160.0,
+      "entry_vwap": 152.4,
+      "ema9": 152.1,
+      "ema20": 151.64,
+      "retest_level": 151.79,
+      "rvol": 1.85,
+      "market_structure": "HH_HL",
+      "ai_score": 86,
+      "price_action_score": 18,
+      "setup_checklist": [
+        {
+          "rule": "VWAP Breakout Buffer (+0.10%)",
+          "passed": true,
+          "detail": "Price \u20b9152.40 confirmed above VWAP \u20b9152.40"
+        },
+        {
+          "rule": "EMA 9 > EMA 20 Momentum Ribbon",
+          "passed": true,
+          "detail": "EMA 9 (\u20b9152.10) > EMA 20 (\u20b9151.64)"
+        },
+        {
+          "rule": "Institutional Volume Surge (1.85x RVOL)",
+          "passed": true,
+          "detail": "1.85x Relative Volume confirmed on breakout"
+        },
+        {
+          "rule": "Market Structure (HH_HL)",
+          "passed": true,
+          "detail": "Constructive Higher Highs & Higher Lows sequence"
+        },
+        {
+          "rule": "Key Breakout & S/R Retest",
+          "passed": true,
+          "detail": "Prior resistance flipped to support near \u20b9151.79"
+        },
+        {
+          "rule": "NIFTY 50 Index Alignment",
+          "passed": true,
+          "detail": "Sector and market trend aligned with trade direction"
+        },
+        {
+          "rule": "Anti-Chasing ATR Guard",
+          "passed": true,
+          "detail": "Price within acceptable ATR distance from VWAP"
+        },
+        {
+          "rule": "Strict 1:2+ Risk:Reward",
+          "passed": true,
+          "detail": "Risk \u20b93.40 : Reward \u20b97.60"
+        }
+      ],
+      "change_pct": 0.0,
+      "sector": "NSE Equity"
     }
   ],
-  "last_updated": "2026-10-17T13:13:38.355184+00:00"
+  "last_updated": "2026-10-22T02:52:05.735266+00:00"
 }

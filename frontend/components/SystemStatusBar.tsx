@@ -113,8 +113,24 @@ export const SystemStatusBar: React.FC = () => {
             <div className="flex items-center space-x-1.5">
               <Radio className="w-3.5 h-3.5 text-emerald-400" />
               <span className="text-slate-300">Broker Stream:</span>
-              <span className={isExpired ? "text-rose-400 font-semibold" : "text-emerald-400 font-semibold"}>
-                {isExpired ? "TOKEN EXPIRED" : isUpstox ? "LIVE FEED ACTIVE" : "STANDBY"}
+              <span
+                className={
+                  isExpired
+                    ? "text-rose-400 font-semibold"
+                    : brokerInfo?.market_session?.power_save_mode
+                    ? "text-amber-400 font-semibold"
+                    : isUpstox
+                    ? "text-emerald-400 font-semibold"
+                    : "text-slate-400 font-semibold"
+                }
+              >
+                {isExpired
+                  ? "TOKEN EXPIRED"
+                  : brokerInfo?.market_session?.power_save_mode
+                  ? `💤 POWER-SAVE (${brokerInfo?.market_session?.status === "WEEKEND_SLEEP" ? "WEEKEND" : "OFF-HOURS"} • 0 API CALLS)`
+                  : isUpstox
+                  ? "LIVE FEED ACTIVE"
+                  : "STANDBY"}
               </span>
             </div>
           </div>
@@ -132,8 +148,17 @@ export const SystemStatusBar: React.FC = () => {
               <span>Provider: </span>
               <span className="text-slate-200">Upstox V2 (NSE Live)</span>
             </div>
-            <div className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300">
-              <span>NSE: 09:15 - 15:30 IST</span>
+            <div className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300 flex items-center gap-1.5">
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  brokerInfo?.market_session?.power_save_mode ? "bg-amber-400" : "bg-emerald-400"
+                }`}
+              />
+              <span>
+                {brokerInfo?.market_session?.power_save_mode
+                  ? "API Window: Mon-Fri 09:00-15:35 IST"
+                  : "NSE Live: 09:15 - 15:30 IST"}
+              </span>
             </div>
           </div>
         </div>

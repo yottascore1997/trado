@@ -138,15 +138,15 @@ class PriceActionEngine:
                 {"rule": "Candle Strength (Rejection Wick)", "points": 2 if candle_passed else 1, "max": 2, "passed": candle_passed, "detail": "Lower wick rejection on retest candle (buyers stepped in)"},
             ]
             total_score = sum(c["points"] for c in checklist)
-            if (index_aligned or is_alpha) and total_score >= 18 and rvol >= 1.8:
+            if index_aligned and total_score >= 18 and rvol >= 1.8:
                 tier = "A+"
                 verdict = f"A+ Prime Setup: Confirmed Breakout & Retest with strong S/R polarity flip and {rvol}x RVOL."
-            elif total_score >= 14:
+            elif index_aligned and total_score >= 14:
                 tier = "A"
                 verdict = f"A Setup: Clean breakout & dynamic support retest with {rvol}x RVOL."
             elif total_score >= 10:
                 tier = "B"
-                verdict = f"B Setup: Moderate momentum with {rvol}x RVOL."
+                verdict = f"B Setup: Moderate momentum with {rvol}x RVOL ({'Counter-Trend / Not Index Aligned' if not index_aligned else 'Awaiting Retest'})."
             else:
                 tier = "C"
                 verdict = f"C Setup (FILTERED): Low price-action conviction for {symbol}."
@@ -167,15 +167,15 @@ class PriceActionEngine:
                 {"rule": "Candle Strength (Bearish Rejection)", "points": 2 if vol_passed else 1, "max": 2, "passed": vol_passed, "detail": "Bearish candle close near session lows"},
             ]
             total_score = sum(c["points"] for c in checklist)
-            if (index_aligned or is_alpha) and total_score >= 18 and rvol >= 1.8:
+            if index_aligned and total_score >= 18 and rvol >= 1.8:
                 tier = "A+"
                 verdict = f"A+ Prime Short Setup: Confirmed breakdown with strong rejection and {rvol}x RVOL."
-            elif total_score >= 14:
+            elif index_aligned and total_score >= 14:
                 tier = "A"
                 verdict = f"A Short Setup: Clean breakdown & rejection with {rvol}x RVOL."
             else:
                 tier = "B"
-                verdict = f"B Short Setup: Moderate breakdown conviction for {symbol}."
+                verdict = f"B Short Setup: Moderate breakdown conviction ({'Counter-Trend / Not Index Aligned' if not index_aligned else 'Awaiting Retest'}) for {symbol}."
 
         return PriceActionEvaluation(
             score=total_score,

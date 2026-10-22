@@ -1,5 +1,5 @@
 from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import random
 
 from app.core.logger import logger
@@ -721,12 +721,44 @@ class StockScreenerService:
     }
 
 
-    def fetch_live_quotes(self) -> Dict[str, Any]:
+    @staticmethod
+    def is_api_session_active(now_ist: Optional[datetime] = None) -> Tuple[bool, str]:
+        """
+        Validates if live Upstox API network calls should be executed:
+        - Monday to Friday: 09:00 AM to 03:35 PM IST -> ACTIVE
+        - Saturday & Sunday: BLOCKED (Market Closed / Weekend Sleep Mode)
+        - Weekdays before 09:00 AM or after 03:35 PM IST: BLOCKED (Off-Hours Sleep Mode)
+        """
+        IST_TZ = timezone(timedelta(hours=5, minutes=30))
+        dt = now_ist if now_ist is not None else datetime.now(IST_TZ)
+        if dt.weekday() >= 5:  # 5=Saturday, 6=Sunday
+            return False, "Market Closed (Weekend: Saturday/Sunday)"
+
+        api_start = dt.replace(hour=9, minute=0, second=0, microsecond=0)
+        api_end = dt.replace(hour=15, minute=35, second=0, microsecond=0)
+
+        if dt < api_start:
+            return False, "Off-Hours: Pre-Market opens at 09:00 AM IST"
+        if dt > api_end:
+            return False, "Off-Hours: Market closed for the day at 03:35 PM IST"
+
+        return True, "Market Active (Live Upstox API Window)"
+
+    def fetch_live_quotes(self, bypass_market_hours: bool = False) -> Dict[str, Any]:
         """Batch fetch live real-time quotes for benchmark indices and liquid NSE universe from Upstox API."""
         import httpx
         from app.config import settings
 
         if settings.MARKET_DATA_PROVIDER.upper() != "UPSTOX" or not settings.UPSTOX_ACCESS_TOKEN:
+            return {}
+
+        # 💤 Zero Cost Off-Hours & Weekend Gatekeeper:
+        is_active, session_reason = self.is_api_session_active()
+        if not is_active and not bypass_market_hours:
+            # When market is closed (weekend / night), return cached quotes from memory
+            # instead of wasting Upstox API quota, network bandwidth, and server compute!
+            if hasattr(self, "_cached_quotes") and self._cached_quotes:
+                return self._cached_quotes
             return {}
 
         try:
@@ -746,11 +778,14 @@ class StockScreenerService:
                 if res.status_code == 200:
                     data = res.json().get("data", {})
                     logger.info(f"Successfully fetched {len(data)} live quotes from Upstox API V2.")
+                    self._cached_quotes = data
                     return data
                 else:
                     logger.warning(f"Upstox quotes returned status {res.status_code}: {res.text[:120]}")
         except Exception as e:
             logger.warning(f"Failed to fetch live Upstox batch quotes: {e}")
+            if hasattr(self, "_cached_quotes") and self._cached_quotes:
+                return self._cached_quotes
         return {}
 
     def get_indices_status(self, live_data: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
@@ -904,6 +939,7 @@ class StockScreenerService:
         wallet_budget: Optional[float] = None,
         mode: Optional[str] = None,
         risk_pct: Optional[float] = None,
+        bypass_cache: bool = False,
     ) -> Dict[str, Any]:
         """
         Executes full screener pipeline with dynamic Virtual Wallet & Mode sizing:
@@ -912,6 +948,7 @@ class StockScreenerService:
         3. Filters liquid universe
         4. Calculates dynamic Quantity, Margin, Risk ₹ and Target ₹
         5. Enforces strict Wallet Ring-Fencing & product type rules
+        6. Caches results during off-hours & weekends to eliminate server CPU and API costs.
         """
         from app.services.trading_plan_manager import trading_plan_manager
 
@@ -939,6 +976,29 @@ class StockScreenerService:
 
         active_risk_pct = risk_pct if risk_pct is not None else float(active_plan.get("risk_per_trade_pct", 1.5))
         max_capital_risk = round(budget * (active_risk_pct / 100.0), 2)
+
+        # 💤 Power-Save Off-Hours & Weekend Cache:
+        # If market is closed and cached result exists, return cached screener immediately
+        is_active, session_desc = self.is_api_session_active()
+        IST_TZ = timezone(timedelta(hours=5, minutes=30))
+        now_ist = datetime.now(IST_TZ)
+        is_weekend = now_ist.weekday() >= 5
+        cache_key = f"{budget}_{','.join(active_modes)}_{active_risk_pct}"
+
+        if not hasattr(self, "_cached_screener_results"):
+            self._cached_screener_results = {}
+
+        if not is_active and not bypass_cache and cache_key in self._cached_screener_results:
+            cached = dict(self._cached_screener_results[cache_key])
+            cached["market_session"] = {
+                "is_active": False,
+                "status": "WEEKEND_SLEEP" if is_weekend else "OFF_HOURS_SLEEP",
+                "description": session_desc,
+                "power_save_mode": True,
+                "session_window": "Mon-Fri 09:00 - 15:35 IST",
+                "message": f"💤 Power-Save Sleep Active ({session_desc}). Upstox API & server compute paused to save costs.",
+            }
+            return cached
 
         # Baseline per-stock allocation & leverage
         if has_intraday:
@@ -1080,13 +1140,9 @@ class StockScreenerService:
             )
 
             if is_nifty_choppy:
-                if not is_alpha_breakout:
-                    signal = "NO_TRADE"
-                    setup_type = "Filtered: NIFTY in Sideways Chop"
-                    ai_score = min(ai_score, 58)
-                else:
-                    setup_type = f"Alpha Breakout (RS: {relative_strength:+.2f}%, RVOL: {rvol}x)"
-                    ai_score = max(ai_score, 82)
+                signal = "NO_TRADE"
+                setup_type = "Filtered: NIFTY in Sideways Chop"
+                ai_score = min(ai_score, 50)
             elif is_extended and signal in ("BUY", "SELL"):
                 # Stock is over-extended (>1.25x ATR from VWAP), high risk of pullback trap
                 setup_type = f"Extended ({atr_extension_ratio}x ATR from VWAP) - Wait for Retest"
@@ -1103,26 +1159,30 @@ class StockScreenerService:
                     is_index_aligned = False
                     alignment_status = "COUNTER_TREND"
                     # Strict Institutional Rule: Never short stocks against a Bullish NIFTY trend!
-                    if not (is_alpha_breakout and relative_strength <= -0.80):
-                        signal = "NO_TRADE"
-                        setup_type = "Blocked: Counter-Trend to Bullish NIFTY"
-                        ai_score = min(ai_score, 52)
+                    signal = "NO_TRADE"
+                    setup_type = "Blocked: Counter-Trend to Bullish NIFTY (No Shorts)"
+                    ai_score = min(ai_score, 45)
             elif nifty_status["trend"] == "BEARISH":
                 if signal == "SELL":
                     is_index_aligned = True
                     alignment_status = "ALIGNED_BEARISH"
                 elif signal == "BUY":
                     is_index_aligned = False
-                    alignment_status = "DIVERGENT"
-                    # Strict Institutional Rule: Never long buy stocks against a Bearish NIFTY trend!
-                    if not (is_alpha_breakout and relative_strength >= 0.80):
-                        signal = "NO_TRADE"
-                        setup_type = "Blocked: Divergent to Bearish NIFTY"
-                        ai_score = min(ai_score, 52)
+                    alignment_status = "COUNTER_TREND"
+                    # Strict Institutional Rule: Never buy stocks against a Bearish NIFTY trend!
+                    signal = "NO_TRADE"
+                    setup_type = "Blocked: Counter-Trend to Bearish NIFTY (No Longs)"
+                    ai_score = min(ai_score, 45)
+            elif is_nifty_choppy:
+                is_index_aligned = False
+                alignment_status = "CHOP_CAUTION"
+                signal = "NO_TRADE"
+                setup_type = "Filtered: NIFTY in Sideways Chop"
+                ai_score = min(ai_score, 50)
 
             # Check Criteria Checklist with Relative Strength & Dynamic ATR
             checklist = [
-                {"rule": "Market Regime Filter (Trending Confirmed)", "passed": not is_nifty_choppy or is_alpha_breakout},
+                {"rule": "Market Regime Filter (Trending Confirmed)", "passed": not is_nifty_choppy and nifty_status.get("trend") in ("BULLISH", "BEARISH")},
                 {"rule": "Trend Confirmation (5m & 15m)", "passed": trend_5m == "BULLISH" and trend_15m == "BULLISH" if signal == "BUY" else trend_5m == "BEARISH"},
                 {"rule": "VWAP Anchor (Price > VWAP for BUY)", "passed": price > vwap if signal == "BUY" else price < vwap},
                 {"rule": "EMA 9 > EMA 20 Alignment", "passed": ema_9 > ema_20 if signal == "BUY" else ema_9 < ema_20},
@@ -1131,7 +1191,7 @@ class StockScreenerService:
                 {"rule": f"Anti-Chasing ATR Buffer ({atr_extension_ratio}x ATR <= 1.25x)", "passed": not is_extended},
                 {"rule": f"Relative Strength vs NIFTY ({relative_strength:+}%)", "passed": relative_strength >= 0.10 if signal == "BUY" else relative_strength <= -0.10},
                 {"rule": "Risk:Reward >= 1:1.5", "passed": reward_pts >= risk_pts * 1.5},
-                {"rule": f"NSE Market Alignment ({alignment_status})", "passed": is_index_aligned or signal == "NO_TRADE" or is_alpha_breakout},
+                {"rule": f"NSE Market Alignment ({alignment_status})", "passed": is_index_aligned},
             ]
 
             # Evaluate Price Action Engine (V2 Modular Quality Layer)
@@ -1172,20 +1232,25 @@ class StockScreenerService:
             actual_risk_per_share = max(0.05, abs(price - stop_loss))
 
             # 2. Risk-based Quantity = Maximum Risk Amount / Risk Per Share
-            risk_based_qty = max(1, int(max_capital_risk / actual_risk_per_share))
+            # Institutional Risk Cap: Cap per-trade risk to min(max_capital_risk, 3000.0) when budget > 50,000
+            effective_risk_cap = min(max_capital_risk, 3000.0) if budget > 50000.0 else max_capital_risk
+            risk_based_qty = max(1, int(effective_risk_cap / actual_risk_per_share))
 
             # 3. Margin Cap: Maximum quantity permissible by allocated capital & leverage
             effective_leverage = 5.0 if has_intraday else 1.0
             max_buying_power = alloc_per_stock_max * effective_leverage
             margin_max_qty = max(1, int(max_buying_power / max(price, 0.05)))
 
-            # 4. Turnover & Exposure Cap: Cap max position gross value to 1.25x total wallet budget
+            # 4. Turnover & Exposure Cap: Cap max position gross value to 1.25x total wallet budget (max ₹2,50,000)
             # Prevents outsized churn, huge STT/exchange charges, and excessive share quantities on lower-priced stocks
-            max_position_exposure = budget * 1.25
+            max_position_exposure = min(budget * 1.25, 250000.0) if budget > 50000.0 else budget * 1.25
             max_exposure_qty = max(1, int(max_position_exposure / max(price, 0.05)))
 
-            # Final Quantity is the MINIMUM of Risk-based Qty, Margin-capped Qty, and Exposure-capped Qty.
-            suggested_qty = max(1, min(risk_based_qty, margin_max_qty, max_exposure_qty))
+            # 5. Share Quantity Cap for Low-Priced Stocks (Prevents 10,000+ shares on stocks like PNB)
+            max_shares_cap = 2000 if price < 250.0 else 5000
+
+            # Final Quantity is the MINIMUM of Risk-based Qty, Margin-capped Qty, Exposure-capped Qty, and Share-cap.
+            suggested_qty = max(1, min(risk_based_qty, margin_max_qty, max_exposure_qty, max_shares_cap))
 
             margin_required = round((suggested_qty * price) / effective_leverage, 2)
             final_risk_rs = round(suggested_qty * actual_risk_per_share, 2)
@@ -1260,11 +1325,9 @@ class StockScreenerService:
             remaining = [s for s in candidates if not s.get("is_eligible", True)]
             top_setups.extend(remaining[: 5 - len(top_setups)])
 
-        # Fallback if filtered list is small
+        # Fallback if filtered list is small: only accept candidates with confirmed index alignment
         if not top_setups:
-            top_setups = [s for s in screened_stocks if s["signal"] in ("BUY", "SELL") and s["ai_score"] >= 75][:5]
-        if not top_setups:
-            top_setups = screened_stocks[:5]
+            top_setups = [s for s in screened_stocks if s["signal"] in ("BUY", "SELL") and s["ai_score"] >= 75 and s.get("index_aligned", False)][:5]
 
         # Top Setups Assembly with Multi-Mode Support
         intraday_candidates = [dict(s) for s in candidates if s.get("is_eligible", True)]
@@ -1272,9 +1335,7 @@ class StockScreenerService:
             remaining = [dict(s) for s in candidates if not s.get("is_eligible", True)]
             intraday_candidates.extend(remaining[: 5 - len(intraday_candidates)])
         if not intraday_candidates:
-            intraday_candidates = [dict(s) for s in screened_stocks if s["signal"] in ("BUY", "SELL") and s["ai_score"] >= 75][:5]
-        if not intraday_candidates:
-            intraday_candidates = [dict(s) for s in screened_stocks[:5]]
+            intraday_candidates = [dict(s) for s in screened_stocks if s["signal"] in ("BUY", "SELL") and s["ai_score"] >= 75 and s.get("index_aligned", False)][:5]
 
         # Ensure Intraday candidates have MIS tags
         for s in intraday_candidates:
@@ -1529,13 +1590,25 @@ class StockScreenerService:
         except Exception as e:
             logger.warning(f"Error processing paper trading tick: {e}")
 
-        return {
+        market_session_info = {
+            "is_active": is_active,
+            "status": "MARKET_ACTIVE" if is_active else ("WEEKEND_SLEEP" if is_weekend else "OFF_HOURS_SLEEP"),
+            "description": session_desc,
+            "power_save_mode": not is_active,
+            "session_window": "Mon-Fri 09:00 - 15:35 IST",
+            "message": "Live Upstox feed streaming active." if is_active else f"💤 Power-Save Sleep Active ({session_desc}). Upstox API & server compute paused to save costs.",
+        }
+
+        res = {
             "indices": indices,
             "funnel": funnel,
             "top_setups": top_setups,
             "all_screened_stocks": screened_stocks,
             "wallet_metrics": wallet_metrics,
+            "market_session": market_session_info,
         }
+        self._cached_screener_results[cache_key] = res
+        return res
 
 
 stock_screener_service = StockScreenerService()

@@ -364,6 +364,15 @@ async def get_broker_status():
     if not hasattr(provider, "get_user_profile") and settings.UPSTOX_ACCESS_TOKEN:
         provider = set_market_data_provider("UPSTOX", access_token=settings.UPSTOX_ACCESS_TOKEN)
 
+    from app.services.stock_screener import stock_screener_service
+    is_active, session_desc = stock_screener_service.is_api_session_active()
+    session_info = {
+        "is_active": is_active,
+        "description": session_desc,
+        "power_save_mode": not is_active,
+        "session_window": "Mon-Fri 09:00 - 15:35 IST",
+    }
+
     if hasattr(provider, "get_user_profile"):
         profile = await provider.get_user_profile()
         funds = await provider.get_funds_and_margin()
@@ -379,6 +388,7 @@ async def get_broker_status():
             "funds": funds,
             "provider_mode": "UPSTOX_LIVE_API_V2" if not token_expired else "UPSTOX_TOKEN_EXPIRED",
             "error": profile.get("error") if token_expired else None,
+            "market_session": session_info,
         }
     else:
         return {
@@ -389,6 +399,7 @@ async def get_broker_status():
             "user_id": "DISCONNECTED",
             "is_active": False,
             "provider_mode": "DISCONNECTED",
+            "market_session": session_info,
         }
 
 

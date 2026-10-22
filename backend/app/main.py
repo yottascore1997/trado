@@ -12,19 +12,30 @@ from app.api.v1 import auth, market, risk, system
 
 
 async def background_market_poller():
-    """Continuously runs in background every 4s to scan Upstox live feed and update paper trades."""
-    logger.info("Background Upstox Live Market Poller started.")
+    """
+    Cost-Optimized Background Market Poller:
+    - During Market Hours (Mon-Fri 09:00 - 15:35 IST): Scans Upstox live feed every 4s for real-time paper trading.
+    - Off-Hours & Weekends (Sat-Sun, or before 09:00 / after 15:35 IST):
+      Enters Power-Save Sleep Mode (sleeps 30s, makes 0 Upstox API calls, 0 screener compute) to eliminate server costs.
+    """
+    logger.info("Background Upstox Live Market Poller started with Off-Hours Power-Save mode.")
     await asyncio.sleep(2.0)  # brief warm-up delay
     while True:
         try:
             from app.services.stock_screener import stock_screener_service
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, stock_screener_service.run_screener)
+            is_active, session_desc = stock_screener_service.is_api_session_active()
+            if is_active:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, stock_screener_service.run_screener)
+                await asyncio.sleep(4.0)
+            else:
+                # Off-hours or weekend: sleep 30s without scanning to preserve CPU & API quota
+                await asyncio.sleep(30.0)
         except asyncio.CancelledError:
             break
         except Exception as e:
             logger.debug(f"Background market scan: {e}")
-        await asyncio.sleep(4.0)
+            await asyncio.sleep(10.0)
 
 
 @asynccontextmanager
