@@ -535,6 +535,25 @@ class PaperTradingEngine:
             )
             return
 
+        # 4. Directional Consecutive Loss Circuit Breaker:
+        # If 2 consecutive trades in the same direction (e.g. SELL) closed underwater today,
+        # market regime is hostile to setups on that side. Halt further fresh entries in that direction.
+        consecutive_sell_losses = 0
+        consecutive_buy_losses = 0
+        for t in reversed(today_trades):
+            side_t = t.get("side")
+            net_pnl_t = t.get("net_pnl", 0.0)
+            if side_t == "SELL":
+                if net_pnl_t < 0:
+                    consecutive_sell_losses += 1
+                else:
+                    break
+            elif side_t == "BUY":
+                if net_pnl_t < 0:
+                    consecutive_buy_losses += 1
+                else:
+                    break
+
         max_active = int(active_plan.get("max_active_trades", 2 if self.wallet_budget <= 25000.0 else 3))
         if len(self.open_positions) >= max_active:
             return  # Already at maximum active allocation
@@ -547,15 +566,36 @@ class PaperTradingEngine:
             if not sym:
                 continue
 
+            tier = setup.get("setup_tier", "B")
+            signal = setup.get("signal")
+            if tier not in ("A+", "A") or signal not in ("BUY", "SELL"):
+                continue
+
+            # Directional Circuit Breaker check
+            if signal == "SELL" and consecutive_sell_losses >= 2:
+                logger.info(
+                    f"🚫 [DIRECTIONAL CIRCUIT BREAKER] {sym}: 2 consecutive Short SELL trades closed underwater today. "
+                    f"Halting fresh Short entries for the rest of today."
+                )
+                continue
+
+            if signal == "BUY" and consecutive_buy_losses >= 2:
+                logger.info(
+                    f"🚫 [DIRECTIONAL CIRCUIT BREAKER] {sym}: 2 consecutive Long BUY trades closed underwater today. "
+                    f"Halting fresh Long entries for the rest of today."
+                )
+                continue
+
             # Institutional Rule: Check if symbol is eligible or in Cooldown / SL-Locked
             eligible, reason = self.check_symbol_entry_eligibility(sym, current_time=now_ist)
             if not eligible:
                 logger.debug(f"Skipping auto-entry for {sym}: {reason}")
                 continue
 
-            tier = setup.get("setup_tier", "B")
-            signal = setup.get("signal")
-            if tier not in ("A+", "A") or signal not in ("BUY", "SELL"):
+            # Strict Institutional Volume Guard: Never enter low-volume fake breakouts/breakdowns
+            setup_rvol = float(setup.get("rvol", 1.5))
+            if setup_rvol < 1.20:
+                logger.info(f"🚫 [AUTO-ENTRY BLOCKED] {sym}: Insufficient volume (RVOL {setup_rvol}x < 1.20x).")
                 continue
 
             # Strict Index Alignment Guard: Block counter-trend setups opposing NIFTY trend

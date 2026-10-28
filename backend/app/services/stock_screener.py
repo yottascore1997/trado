@@ -1075,7 +1075,14 @@ class StockScreenerService:
                 ema_9 = round(price * 0.70 + vwap * 0.30, 2)
                 ema_20 = round(vwap * 0.70 + open_p * 0.30, 2)
 
-                if change_pct >= 0 and price >= (vwap + vwap_entry_buffer):
+                # 4. Session Range Location (Filters Mid-Range Noise vs Real Momentum Expansion)
+                range_span = max(high_p - low_p, price * 0.005)
+                range_pos = round((price - low_p) / range_span, 2) if range_span > 0 else 0.50
+
+                is_bullish_expansion = (change_pct >= 0) and (price >= (vwap + vwap_entry_buffer)) and (range_pos >= 0.55 or is_orb_breakout) and (ema_9 >= ema_20)
+                is_bearish_expansion = (change_pct < 0) and (price <= (vwap - vwap_entry_buffer)) and (range_pos <= 0.45 or is_orb_breakdown) and (ema_9 <= ema_20)
+
+                if is_bullish_expansion:
                     signal = "BUY"
                     trend_5m = "BULLISH"
                     trend_15m = "BULLISH"
@@ -1087,7 +1094,7 @@ class StockScreenerService:
                     target = round(price + reward_pts, 2)
                     setup_type = "Upstox Live VWAP Breakout & Retest"
                     ai_score = min(95, int(78 + abs(change_pct) * 4 + (rvol - 1.0) * 6))
-                elif change_pct < 0 and price <= (vwap - vwap_entry_buffer):
+                elif is_bearish_expansion:
                     signal = "SELL"
                     trend_5m = "BEARISH"
                     trend_15m = "BEARISH"
@@ -1108,8 +1115,8 @@ class StockScreenerService:
                     reward_pts = round(risk_pts * 1.5, 2)
                     stop_loss = round(price - risk_pts, 2)
                     target = round(price + reward_pts, 2)
-                    setup_type = "Consolidation Near VWAP"
-                    ai_score = 62
+                    setup_type = "Mid-Range Congestion (No Edge)"
+                    ai_score = 55
             else:
                 # Strictly real data: skip symbols without live market feed instead of generating dummy/mock data
                 continue
@@ -1206,6 +1213,11 @@ class StockScreenerService:
                 setup_type=setup_type,
                 market_regime=nifty_status.get("regime", "TRENDING"),
                 relative_strength=relative_strength,
+                day_high=high_p,
+                day_low=low_p,
+                day_open=open_p,
+                ema_9=ema_9,
+                ema_20=ema_20,
             )
 
             # 5. Multi-Factor Composite Trade Ranking (0 to 100 Prop-Desk Quality Model)
