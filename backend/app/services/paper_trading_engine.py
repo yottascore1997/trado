@@ -435,8 +435,9 @@ class PaperTradingEngine:
         Evaluates whether a symbol is eligible for a new trade today under institutional risk rules:
         1. Open Position Check: Cannot enter if an active position is already open in this stock.
         2. 1-SL Blacklist Rule: If this stock hit Stop Loss or suffered a loss today, it is locked for the day.
-        3. Max 2 Trades Rule: A single stock cannot be traded more than 2 times in a single day.
-        4. Cooldown Rule: Must wait at least 20 minutes after a profitable exit before re-entering.
+        3. Target Hit / Profit Lock Protection: If this stock already reached Target or locked profit today, lock it to prevent chasing exhausted momentum.
+        4. Max 2 Trades Rule: A single stock cannot be traded more than 2 times in a single day.
+        5. Cooldown Rule: Must wait at least 20 minutes after an exit before re-entering.
         """
         now = current_time if current_time is not None else datetime.now(IST)
         today_str = now.strftime("%Y-%m-%d")
@@ -463,7 +464,15 @@ class PaperTradingEngine:
         if has_sl_hit:
             return False, f"{symbol} locked for today (Stop Loss hit / 1-Loss Protection)"
 
-        # 4. Cooldown Period (20 minutes from last exit)
+        # 4. Target Hit / Profit Lock Protection (Prevents overtrading exhausted momentum)
+        has_target_or_profit_lock = any(
+            t.get("exit_reason") == "TARGET_HIT" or (t.get("exit_reason") == "TRAILING_SL_HIT" and t.get("gross_pnl", 0.0) > 0)
+            for t in today_trades
+        )
+        if has_target_or_profit_lock:
+            return False, f"{symbol} locked for today (Target Hit / Profit Locked — momentum exhausted)"
+
+        # 5. Cooldown Period (20 minutes from last exit)
         if today_trades:
             last_trade = today_trades[-1]
             exit_time_str = last_trade.get("exit_time")

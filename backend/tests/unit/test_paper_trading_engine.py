@@ -167,7 +167,7 @@ def test_symbol_reentry_and_protection_rules():
     assert eligible is False
     assert "Stop Loss hit" in reason
 
-    # 4. Another stock exits with Target Hit (Profit) -> Enforces 20m Cooldown
+    # 4. Another stock exits with Target Hit (Profit) -> Locks symbol for today (momentum exhausted)
     pos_tcs = engine.open_position(
         symbol="TCS",
         side="BUY",
@@ -180,26 +180,46 @@ def test_symbol_reentry_and_protection_rules():
     engine.close_position(pos_tcs["position_id"], reason="TARGET_HIT", exit_price=3100.0)
     eligible, reason = engine.check_symbol_entry_eligibility("TCS")
     assert eligible is False
-    assert "Cooldown active" in reason
+    assert "Target Hit / Profit Locked" in reason
 
-    # 5. After 20 minutes pass -> Eligible for second entry
-    # Simulate trade was closed 25 minutes ago
+    # Even after 25 minutes pass, TCS remains locked because target was reached
     engine.closed_trades[-1]["exit_time"] = (datetime.now(timezone.utc) - timedelta(minutes=25)).isoformat()
     eligible, reason = engine.check_symbol_entry_eligibility("TCS")
+    assert eligible is False
+    assert "Target Hit / Profit Locked" in reason
+
+    # 5. Breakeven exit on another stock -> Enforces 20m Cooldown, then allows 2nd attempt
+    pos_wipro = engine.open_position(
+        symbol="WIPRO",
+        side="BUY",
+        quantity=20,
+        entry_price=500.0,
+        stop_loss=495.0,
+        target_price=510.0,
+        margin_required=2000.0,
+    )
+    engine.close_position(pos_wipro["position_id"], reason="BREAKEVEN_EXIT", exit_price=500.0)
+    eligible, reason = engine.check_symbol_entry_eligibility("WIPRO")
+    assert eligible is False
+    assert "Cooldown active" in reason
+
+    # After 25 minutes pass -> Eligible for second entry
+    engine.closed_trades[-1]["exit_time"] = (datetime.now(timezone.utc) - timedelta(minutes=25)).isoformat()
+    eligible, reason = engine.check_symbol_entry_eligibility("WIPRO")
     assert eligible is True
 
     # 6. Second trade taken and closed -> Max 2 trades reached, cannot enter 3rd time
-    pos_tcs2 = engine.open_position(
-        symbol="TCS",
+    pos_wipro2 = engine.open_position(
+        symbol="WIPRO",
         side="BUY",
-        quantity=5,
-        entry_price=3120.0,
-        stop_loss=3080.0,
-        target_price=3200.0,
-        margin_required=3000.0,
+        quantity=20,
+        entry_price=502.0,
+        stop_loss=497.0,
+        target_price=512.0,
+        margin_required=2000.0,
     )
-    engine.close_position(pos_tcs2["position_id"], reason="TARGET_HIT", exit_price=3200.0)
-    eligible, reason = engine.check_symbol_entry_eligibility("TCS")
+    engine.close_position(pos_wipro2["position_id"], reason="BREAKEVEN_EXIT", exit_price=502.0)
+    eligible, reason = engine.check_symbol_entry_eligibility("WIPRO")
     assert eligible is False
     assert "Max intraday trade limit" in reason
 
@@ -294,6 +314,11 @@ def test_profit_lock_trailing_sl_near_target_reversal():
     # Even though target was missed, trade locked in ~₹280 profit (instead of losing ₹200 on initial SL)!
     assert trade["gross_pnl"] >= 280.0
     assert trade["net_pnl"] > 0.0
+
+    # Crucial: Symbol must be locked for the rest of today to prevent re-entering exhausted reversal
+    eligible, reason = engine.check_symbol_entry_eligibility("TATAMOTORS")
+    assert eligible is False
+    assert "Target Hit / Profit Locked" in reason
 
 
 def test_short_sell_trailing_sl_and_profit_lock():
