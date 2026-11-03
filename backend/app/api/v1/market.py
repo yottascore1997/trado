@@ -521,6 +521,50 @@ async def reset_paper_wallet(payload: Optional[dict] = None):
     }
 
 
+# =========================================================================
+# ALL-OPPORTUNITY SETUP TRACKER (₹50k Margin • 2x Leverage)
+# =========================================================================
+
+@router.get("/setups/live-tracker")
+async def get_setup_tracker_summary():
+    """
+    Returns live tracking summary of all A+ and A setups executed with ₹50,000 margin (2x leverage).
+    Provides active positions, today's closed setups, trailing SL statuses, and aggregate performance.
+    """
+    from app.services.setup_tracker_engine import setup_tracker_engine
+    return setup_tracker_engine.get_summary()
+
+
+@router.post("/setups/live-tracker/close")
+async def close_setup_tracker_position(payload: dict):
+    """
+    Manually closes an active setup in the tracker.
+    """
+    from app.services.setup_tracker_engine import setup_tracker_engine
+    setup_id = payload.get("setup_id")
+    if not setup_id:
+        raise HTTPException(status_code=400, detail="Missing setup_id")
+    res = setup_tracker_engine.manual_close(setup_id)
+    if not res:
+        raise HTTPException(status_code=404, detail="Setup position not found or already closed")
+    return res
+
+
+@router.post("/setups/live-tracker/reset")
+async def reset_setup_tracker():
+    """
+    Clears setup tracker active and closed trades.
+    """
+    from app.services.setup_tracker_engine import setup_tracker_engine
+    setup_tracker_engine.reset_tracker()
+    return {
+        "success": True,
+        "message": "Setup tracker reset successfully.",
+        "summary": setup_tracker_engine.get_summary(),
+    }
+
+
+
 
 
 

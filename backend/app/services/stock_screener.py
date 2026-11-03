@@ -1602,6 +1602,14 @@ class StockScreenerService:
         except Exception as e:
             logger.warning(f"Error processing paper trading tick: {e}")
 
+        # Process all-opportunity setup tracker (₹50k Margin • 2x Leverage)
+        try:
+            from app.services.setup_tracker_engine import setup_tracker_engine
+            if live_quotes:
+                setup_tracker_engine.process_market_tick(live_quotes, top_setups)
+        except Exception as e:
+            logger.warning(f"Error processing setup tracker tick: {e}")
+
         market_session_info = {
             "is_active": is_active,
             "status": "MARKET_ACTIVE" if is_active else ("WEEKEND_SLEEP" if is_weekend else "OFF_HOURS_SLEEP"),

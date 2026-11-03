@@ -21,8 +21,73 @@ import {
   Sliders,
   Award,
   BarChart2,
+  Sparkles,
+  Target,
+  Layers,
 } from "lucide-react";
 import { StockSetupChartModal } from "./StockSetupChartModal";
+
+export interface SetupTrackerItem {
+  setup_id: string;
+  symbol: string;
+  setup_tier: "A+" | "A" | string;
+  tier_label: string;
+  setup_type: string;
+  side: "BUY" | "SELL";
+  quantity: number;
+  entry_price: number;
+  current_price: number;
+  initial_stop_loss?: number;
+  stop_loss: number;
+  target_price: number;
+  highest_price?: number;
+  lowest_price?: number;
+  trailing_stage: string;
+  trailing_description?: string;
+  base_capital: number;
+  leverage: number;
+  margin_required: number;
+  total_exposure: number;
+  unrealized_pnl: number;
+  pnl_pct: number;
+  product_type: string;
+  entry_time: string;
+  last_updated: string;
+  exit_price?: number;
+  exit_time?: string;
+  date?: string;
+  gross_pnl?: number;
+  charges?: number;
+  net_pnl?: number;
+  roi_pct?: number;
+  exit_reason?: string;
+  rvol?: number;
+  score?: number;
+}
+
+export interface SetupTrackerSummary {
+  base_capital_per_trade: number;
+  leverage: number;
+  exposure_per_trade: number;
+  total_setups_today: number;
+  a_plus_count: number;
+  a_count: number;
+  active_count: number;
+  closed_count: number;
+  wins: number;
+  losses: number;
+  breakevens: number;
+  win_rate_pct: number;
+  unrealized_mtm: number;
+  realized_gross: number;
+  realized_charges: number;
+  realized_net: number;
+  total_combined_pnl: number;
+  total_margin_deployed: number;
+  active_setups: SetupTrackerItem[];
+  closed_setups: SetupTrackerItem[];
+  all_closed_history_count?: number;
+}
 
 interface OpenPosition {
   position_id: string;
@@ -121,6 +186,8 @@ export const PaperTradingDashboard: React.FC = () => {
   });
 
   const [daywiseRecords, setDaywiseRecords] = useState<DayWiseRecord[]>([]);
+  const [setupTracker, setSetupTracker] = useState<SetupTrackerSummary | null>(null);
+  const [activeTabTracker, setActiveTabTracker] = useState<"ACTIVE" | "CLOSED">("ACTIVE");
   const [isLoading, setIsLoading] = useState(false);
   const [isTogglingAuto, setIsTogglingAuto] = useState(false);
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
@@ -250,12 +317,104 @@ export const PaperTradingDashboard: React.FC = () => {
     });
   };
 
+  const handleOpenSetupChart = (pos: SetupTrackerItem) => {
+    const isBuy = pos.side === "BUY";
+    const entry = pos.entry_price;
+    const current = pos.current_price;
+    const sl = pos.stop_loss;
+    const target = pos.target_price;
+    const vwap = isBuy ? entry * 0.996 : entry * 1.004;
+    const ema9 = isBuy ? entry * 0.998 : entry * 1.002;
+    const ema20 = isBuy ? entry * 0.995 : entry * 1.005;
+    const retest = isBuy ? entry * 0.996 : entry * 1.004;
+    const rvol = pos.rvol || 1.85;
+
+    const risk_pts = Math.abs(entry - sl);
+    const reward_pts = Math.abs(target - entry);
+    const rr = (reward_pts / Math.max(risk_pts, 0.05)).toFixed(1);
+
+    setSelectedTradeForChart({
+      symbol: pos.symbol,
+      price: current,
+      current_price: current,
+      change: current - entry,
+      change_pct: pos.pnl_pct || ((current - entry) / Math.max(entry, 1.0)) * 100,
+      volume: 125000,
+      rvol: rvol,
+      vwap: vwap,
+      entry_vwap: vwap,
+      ema9: ema9,
+      ema20: ema20,
+      market_structure: isBuy ? "HH_HL" : "LH_LL",
+      signal: pos.side,
+      setup_type: pos.setup_type || "Algorithmic Setup",
+      setup_tier: pos.setup_tier,
+      entry_price: entry,
+      stop_loss: sl,
+      initial_stop_loss: pos.initial_stop_loss || sl,
+      target_price: target,
+      risk_reward: `1:${rr}`,
+      risk_pts: Number(risk_pts.toFixed(2)),
+      reward_pts: Number(reward_pts.toFixed(2)),
+      suggested_qty: pos.quantity,
+      quantity: pos.quantity,
+      position_size_val: pos.total_exposure,
+      margin_required: pos.margin_required,
+      ai_score: pos.score || 88,
+      price_action_score: 18,
+      sector: "NSE Equity",
+      product_type: pos.product_type,
+      is_paper_trade: true,
+      trade_status: pos.exit_time ? "CLOSED" : "OPEN",
+      trade_id: pos.setup_id,
+      net_pnl: pos.net_pnl !== undefined ? pos.net_pnl : pos.unrealized_pnl,
+      gross_pnl: pos.gross_pnl !== undefined ? pos.gross_pnl : pos.unrealized_pnl,
+      charges: pos.charges || 0,
+      exit_price: pos.exit_price,
+      exit_time: pos.exit_time,
+      exit_reason: pos.exit_reason,
+      trailing_stage: pos.trailing_stage,
+      entry_time: pos.entry_time,
+    });
+  };
+
+  const handleCloseSetupTrade = async (setupId: string) => {
+    try {
+      const res = await fetch(apiUrl("/api/v1/market/setups/live-tracker/close"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ setup_id: setupId }),
+      });
+      if (res.ok) {
+        fetchData();
+      }
+    } catch (e) {
+      console.warn("Failed to close setup trade:", e);
+    }
+  };
+
+  const handleResetSetupTracker = async () => {
+    if (!confirm("Are you sure you want to reset the setup tracker history for today?")) return;
+    try {
+      const res = await fetch(apiUrl("/api/v1/market/setups/live-tracker/reset"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (res.ok) {
+        fetchData();
+      }
+    } catch (e) {
+      console.warn("Failed to reset setup tracker:", e);
+    }
+  };
+
   const fetchData = useCallback(async () => {
     try {
       setIsLoading(true);
-      const [sumRes, dayRes] = await Promise.all([
+      const [sumRes, dayRes, trackerRes] = await Promise.all([
         fetch(apiUrl(`/api/v1/market/paper/summary?_t=${Date.now()}`)),
         fetch(apiUrl(`/api/v1/market/paper/daywise-pnl?_t=${Date.now()}`)),
+        fetch(apiUrl(`/api/v1/market/setups/live-tracker?_t=${Date.now()}`)),
       ]);
 
       if (sumRes.ok) {
@@ -265,6 +424,10 @@ export const PaperTradingDashboard: React.FC = () => {
       if (dayRes.ok) {
         const dayData = await dayRes.json();
         setDaywiseRecords(dayData);
+      }
+      if (trackerRes.ok) {
+        const trackerData = await trackerRes.json();
+        setSetupTracker(trackerData);
       }
       setLastSynced(new Date().toLocaleTimeString("en-IN", { hour12: false }));
     } catch (e) {
@@ -677,7 +840,429 @@ export const PaperTradingDashboard: React.FC = () => {
       </div>
 
       {/* ========================================================================= */}
-      {/* SECTION 2: DAY-WISE P&L PERFORMANCE LEDGER                                */}
+      {/* SECTION 2: ALL-OPPORTUNITY SETUP TRACKER (₹50k Margin • 2x Leverage)      */}
+      {/* ========================================================================= */}
+      <div className="p-5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-4">
+        {/* Header & Badges */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div className="flex items-center space-x-2.5">
+            <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400">
+              <Zap className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-sm text-slate-100">All-Opportunity Setup Tracker</h3>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-700/60 font-semibold flex items-center gap-1">
+                  <Sparkles className="w-2.5 h-2.5 text-amber-400" /> ₹50,000 Margin • 2x Leverage (₹1,00,000 Exp)
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 font-sans mt-0.5">
+                Simulated execution across all screener A+ & A setups with live multi-stage Trailing Stop Loss
+              </p>
+            </div>
+          </div>
+
+          {/* Tab Switcher & Reset */}
+          <div className="flex items-center space-x-2">
+            <div className="flex items-center bg-slate-950/80 p-0.5 rounded-lg border border-slate-800 text-xs">
+              <button
+                onClick={() => setActiveTabTracker("ACTIVE")}
+                className={`px-3 py-1 rounded-md font-mono transition-all flex items-center gap-1.5 ${
+                  activeTabTracker === "ACTIVE"
+                    ? "bg-slate-800 text-cyan-300 font-bold shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <Activity className="w-3 h-3 text-cyan-400" />
+                Active Setups ({setupTracker?.active_count || 0})
+              </button>
+              <button
+                onClick={() => setActiveTabTracker("CLOSED")}
+                className={`px-3 py-1 rounded-md font-mono transition-all flex items-center gap-1.5 ${
+                  activeTabTracker === "CLOSED"
+                    ? "bg-slate-800 text-amber-300 font-bold shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <CheckCircle2 className="w-3 h-3 text-amber-400" />
+                Closed Today ({setupTracker?.closed_count || 0})
+              </button>
+            </div>
+
+            <button
+              onClick={handleResetSetupTracker}
+              title="Reset today's setup tracker records"
+              className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700 text-xs transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Live Metrics Summary Bar */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+          <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80">
+            <div className="text-[10px] text-slate-400 uppercase font-mono">Today's Setups</div>
+            <div className="flex items-baseline space-x-1.5 mt-0.5">
+              <span className="text-base font-bold text-slate-100 font-mono">
+                {setupTracker?.total_setups_today || 0}
+              </span>
+              <span className="text-[10px] text-amber-400 font-mono">
+                ({setupTracker?.a_plus_count || 0} A+ • {setupTracker?.a_count || 0} A)
+              </span>
+            </div>
+          </div>
+
+          <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80">
+            <div className="text-[10px] text-slate-400 uppercase font-mono">Win Rate</div>
+            <div className="flex items-baseline space-x-1.5 mt-0.5">
+              <span className="text-base font-bold text-emerald-400 font-mono">
+                {setupTracker?.win_rate_pct || 0}%
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono">
+                ({setupTracker?.wins || 0}W - {setupTracker?.losses || 0}L)
+              </span>
+            </div>
+          </div>
+
+          <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80">
+            <div className="text-[10px] text-slate-400 uppercase font-mono">Running MTM</div>
+            <div
+              className={`text-base font-bold font-mono mt-0.5 ${
+                (setupTracker?.unrealized_mtm || 0) >= 0 ? "text-emerald-400" : "text-rose-400"
+              }`}
+            >
+              {(setupTracker?.unrealized_mtm || 0) >= 0 ? "+" : ""}₹
+              {(setupTracker?.unrealized_mtm || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+            </div>
+          </div>
+
+          <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80">
+            <div className="text-[10px] text-slate-400 uppercase font-mono">Realized Net</div>
+            <div
+              className={`text-base font-bold font-mono mt-0.5 ${
+                (setupTracker?.realized_net || 0) >= 0 ? "text-emerald-400" : "text-rose-400"
+              }`}
+            >
+              {(setupTracker?.realized_net || 0) >= 0 ? "+" : ""}₹
+              {(setupTracker?.realized_net || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+            </div>
+          </div>
+
+          <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80">
+            <div className="text-[10px] text-slate-400 uppercase font-mono">Total Combined P&L</div>
+            <div
+              className={`text-base font-bold font-mono mt-0.5 ${
+                (setupTracker?.total_combined_pnl || 0) >= 0 ? "text-emerald-400" : "text-rose-400"
+              }`}
+            >
+              {(setupTracker?.total_combined_pnl || 0) >= 0 ? "+" : ""}₹
+              {(setupTracker?.total_combined_pnl || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+            </div>
+          </div>
+
+          <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80">
+            <div className="text-[10px] text-slate-400 uppercase font-mono">Margin In Use</div>
+            <div className="text-base font-bold text-slate-200 font-mono mt-0.5">
+              ₹{(setupTracker?.total_margin_deployed || 0).toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+            </div>
+          </div>
+        </div>
+
+        {/* TAB 1: ACTIVE SETUPS TABLE */}
+        {activeTabTracker === "ACTIVE" && (
+          <div>
+            {(!setupTracker?.active_setups || setupTracker.active_setups.length === 0) ? (
+              <div className="py-8 text-center text-slate-500 font-mono text-xs">
+                No active setups currently running. When screener identifies A+ or A tier triggers, they will automatically appear here with ₹50k (2x) allocation.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left font-mono">
+                  <thead className="text-[11px] text-slate-400 uppercase bg-slate-950/70 border-b border-slate-800">
+                    <tr>
+                      <th className="py-2.5 px-3">Instrument & Tier</th>
+                      <th className="py-2.5 px-3">Side</th>
+                      <th className="py-2.5 px-3">Qty & Sizing</th>
+                      <th className="py-2.5 px-3">Entry Price</th>
+                      <th className="py-2.5 px-3">Upstox LTP</th>
+                      <th className="py-2.5 px-3">Trailing Stop Loss</th>
+                      <th className="py-2.5 px-3">Target Price</th>
+                      <th className="py-2.5 px-3">Running P&L (₹50k)</th>
+                      <th className="py-2.5 px-3 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {setupTracker.active_setups.map((pos) => {
+                      const isBuy = pos.side === "BUY";
+                      const isProfit = pos.unrealized_pnl >= 0;
+
+                      return (
+                        <tr
+                          key={pos.setup_id}
+                          onClick={() => handleOpenSetupChart(pos)}
+                          className="hover:bg-slate-800/50 transition-colors cursor-pointer group"
+                          title="Click to view algorithmic trade setup chart"
+                        >
+                          <td className="py-3 px-3">
+                            <div className="flex items-center space-x-1.5">
+                              <span className="font-bold text-slate-100 group-hover:text-amber-300 transition-colors">
+                                {pos.symbol}
+                              </span>
+                              {pos.setup_tier === "A+" ? (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-950/90 text-amber-300 border border-amber-600/80 font-bold flex items-center gap-0.5 shadow-sm">
+                                  <Sparkles className="w-2.5 h-2.5 text-amber-400" /> A+ Institutional
+                                </span>
+                              ) : (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-950/90 text-cyan-300 border border-cyan-600/80 font-semibold flex items-center gap-0.5">
+                                  <Zap className="w-2.5 h-2.5 text-cyan-400" /> A Conviction
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-sans mt-0.5">
+                              {pos.setup_type}
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-3">
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                isBuy
+                                  ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                                  : "bg-rose-950 text-rose-400 border border-rose-800"
+                              }`}
+                            >
+                              {pos.side}
+                            </span>
+                          </td>
+
+                          <td className="py-3 px-3">
+                            <div className="font-bold text-slate-200">{pos.quantity} sh</div>
+                            <div className="text-[10px] text-slate-400 font-sans">
+                              ₹{pos.margin_required.toLocaleString()} margin (2x)
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-3">
+                            <div className="text-slate-300">₹{pos.entry_price.toFixed(2)}</div>
+                            <div className="text-[10px] text-slate-500 font-mono">
+                              {pos.entry_time?.split("T")[1]?.slice(0, 5) || "09:30"} IST
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-3 text-cyan-300 font-bold tabular-nums">
+                            ₹{pos.current_price.toFixed(2)}
+                          </td>
+
+                          <td className="py-3 px-3">
+                            <div className="text-rose-400 font-semibold">₹{pos.stop_loss.toFixed(2)}</div>
+                            {pos.trailing_stage === "PROFIT_LOCK_70" && (
+                              <span className="inline-block text-[9px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold mt-0.5">
+                                🔒 Super Lock (70% Tgt)
+                              </span>
+                            )}
+                            {pos.trailing_stage === "PROFIT_LOCK_50" && (
+                              <span className="inline-block text-[9px] px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-700 font-semibold mt-0.5">
+                                🔒 Lock 50% Target
+                              </span>
+                            )}
+                            {pos.trailing_stage === "PROFIT_LOCK_25" && (
+                              <span className="inline-block text-[9px] px-1.5 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-700 font-semibold mt-0.5">
+                                🔒 Lock 25% Target
+                              </span>
+                            )}
+                            {pos.trailing_stage === "BREAKEVEN" && (
+                              <span className="inline-block text-[9px] px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-700 font-semibold mt-0.5">
+                                🛡️ Trailed to Cost
+                              </span>
+                            )}
+                            {(!pos.trailing_stage || pos.trailing_stage === "INITIAL") && (
+                              <span className="inline-block text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 font-mono mt-0.5">
+                                🛑 Initial SL
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-3 text-emerald-400 font-semibold">
+                            ₹{pos.target_price.toFixed(2)}
+                          </td>
+
+                          <td className="py-3 px-3">
+                            <div className={`font-bold tabular-nums ${isProfit ? "text-emerald-400" : "text-rose-400"}`}>
+                              {isProfit ? "+" : ""}₹{pos.unrealized_pnl.toFixed(2)}
+                            </div>
+                            <div className={`text-[10px] font-semibold ${isProfit ? "text-emerald-400/80" : "text-rose-400/80"}`}>
+                              ({isProfit ? "+" : ""}{pos.pnl_pct.toFixed(2)}% on ₹50k)
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-3 text-right">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCloseSetupTrade(pos.setup_id);
+                              }}
+                              className="px-2.5 py-1 rounded bg-slate-800 hover:bg-rose-900/50 text-slate-300 hover:text-rose-200 border border-slate-700 text-xs font-medium transition-colors cursor-pointer"
+                            >
+                              Square Off
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 2: CLOSED SETUPS TODAY TABLE */}
+        {activeTabTracker === "CLOSED" && (
+          <div>
+            {(!setupTracker?.closed_setups || setupTracker.closed_setups.length === 0) ? (
+              <div className="py-8 text-center text-slate-500 font-mono text-xs">
+                No setups closed yet today. As positions hit Target, Trailing SL, or 3:15 PM Square-Off, they will be archived here.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left font-mono">
+                  <thead className="text-[11px] text-slate-400 uppercase bg-slate-950/70 border-b border-slate-800">
+                    <tr>
+                      <th className="py-2.5 px-3">Instrument & Tier</th>
+                      <th className="py-2.5 px-3">Side</th>
+                      <th className="py-2.5 px-3">Qty & Sizing</th>
+                      <th className="py-2.5 px-3">Entry → Exit Price</th>
+                      <th className="py-2.5 px-3">Exit Reason</th>
+                      <th className="py-2.5 px-3">Gross P&L</th>
+                      <th className="py-2.5 px-3">Charges</th>
+                      <th className="py-2.5 px-3">Net P&L (ROI %)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {setupTracker.closed_setups.map((c) => {
+                      const isProfit = (c.net_pnl || 0) >= 0;
+                      const isBuy = c.side === "BUY";
+
+                      return (
+                        <tr
+                          key={c.setup_id}
+                          onClick={() => handleOpenSetupChart(c)}
+                          className="hover:bg-slate-800/50 transition-colors cursor-pointer group"
+                          title="Click to view trade chart"
+                        >
+                          <td className="py-3 px-3">
+                            <div className="flex items-center space-x-1.5">
+                              <span className="font-bold text-slate-100 group-hover:text-amber-300 transition-colors">
+                                {c.symbol}
+                              </span>
+                              {c.setup_tier === "A+" ? (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-950/90 text-amber-300 border border-amber-600/80 font-bold flex items-center gap-0.5">
+                                  <Sparkles className="w-2.5 h-2.5 text-amber-400" /> A+
+                                </span>
+                              ) : (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-950/90 text-cyan-300 border border-cyan-600/80 font-semibold flex items-center gap-0.5">
+                                  <Zap className="w-2.5 h-2.5 text-cyan-400" /> A
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-sans mt-0.5">
+                              {c.setup_type}
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-3">
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                isBuy
+                                  ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                                  : "bg-rose-950 text-rose-400 border border-rose-800"
+                              }`}
+                            >
+                              {c.side}
+                            </span>
+                          </td>
+
+                          <td className="py-3 px-3">
+                            <div className="font-bold text-slate-200">{c.quantity} sh</div>
+                            <div className="text-[10px] text-slate-400">
+                              ₹{(c.margin_required || 50000).toLocaleString()} margin
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-3">
+                            <div className="text-slate-300">
+                              ₹{c.entry_price.toFixed(2)} → ₹{(c.exit_price || c.entry_price).toFixed(2)}
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-mono">
+                              {c.exit_time?.split("T")[1]?.slice(0, 5) || "15:15"} IST
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-3">
+                            {c.exit_reason === "TARGET_HIT" && (
+                              <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold">
+                                🎯 Target Hit
+                              </span>
+                            )}
+                            {c.exit_reason === "TRAILING_SL_HIT" && (
+                              <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-700 font-semibold">
+                                🔒 Trailing SL Hit
+                              </span>
+                            )}
+                            {c.exit_reason === "BREAKEVEN_EXIT" && (
+                              <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-700 font-semibold">
+                                🛡️ Breakeven Exit
+                              </span>
+                            )}
+                            {c.exit_reason === "STOP_LOSS_HIT" && (
+                              <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-700 font-semibold">
+                                🛑 Stop Loss Hit
+                              </span>
+                            )}
+                            {c.exit_reason === "INTRADAY_SQUARE_OFF" && (
+                              <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                                ⏱️ 3:15 PM Square-Off
+                              </span>
+                            )}
+                            {c.exit_reason === "MANUAL_CLOSE" && (
+                              <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-700">
+                                ✋ Manual Close
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-3">
+                            <span className={c.gross_pnl && c.gross_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                              {c.gross_pnl && c.gross_pnl >= 0 ? "+" : ""}₹{(c.gross_pnl || 0).toFixed(2)}
+                            </span>
+                          </td>
+
+                          <td className="py-3 px-3 text-slate-400">
+                            -₹{(c.charges || 0).toFixed(2)}
+                          </td>
+
+                          <td className="py-3 px-3">
+                            <div className={`font-bold tabular-nums ${isProfit ? "text-emerald-400" : "text-rose-400"}`}>
+                              {isProfit ? "+" : ""}₹{(c.net_pnl || 0).toFixed(2)}
+                            </div>
+                            <div className={`text-[10px] font-semibold ${isProfit ? "text-emerald-400/80" : "text-rose-400/80"}`}>
+                              ({isProfit ? "+" : ""}{(c.roi_pct || 0).toFixed(2)}% on ₹50k)
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ========================================================================= */}
+      {/* SECTION 3: DAY-WISE P&L PERFORMANCE LEDGER                                */}
       {/* ========================================================================= */}
       <div className="p-5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
