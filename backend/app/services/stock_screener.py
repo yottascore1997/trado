@@ -1031,6 +1031,48 @@ class StockScreenerService:
         elapsed_mins = max(15.0, min(375.0, (now_ist - session_start).total_seconds() / 60.0))
         expected_vol_fraction = elapsed_mins / 375.0
 
+        # Dynamic Sector Health & Trend Strength Calculation from Live Quotes
+        SECTOR_COMPONENT_MAP = {
+            "IT Services": ["TCS", "INFY", "HCLTECH", "TECHM", "WIPRO"],
+            "Private Banking": ["HDFCBANK", "ICICIBANK", "AXISBANK", "KOTAKBANK", "INDUSINDBK"],
+            "Public Banking": ["SBIN", "PNB", "CANBK", "BANKBARODA"],
+            "Automobile": ["TATAMOTORS", "M&M", "MARUTI", "BAJAJ-AUTO", "HEROMOTOCO"],
+            "NBFC & Finance": ["BAJFINANCE", "BAJAJFINSV", "CHOLAFIN", "SHRIRAMFIN", "RECLTD", "JIOFIN"],
+            "Metals & Mining": ["TATASTEEL", "JINDALSTEL", "VEDL", "HINDALCO", "JSWSTEEL"],
+            "Real Estate": ["DLF", "GODREJPROP", "OBEROIRLTY"],
+            "Cement": ["AMBUJACEM", "ULTRACEMCO", "SHREECEM"],
+        }
+        sector_performance = {}
+        if live_quotes:
+            for sec_name, sec_syms in SECTOR_COMPONENT_MAP.items():
+                sec_changes = []
+                sec_above_vwap = 0
+                for s_sym in sec_syms:
+                    q = live_quotes.get(f"NSE_EQ:{s_sym}") or live_quotes.get(f"NSE_EQ|{s_sym}")
+                    if q and "last_price" in q:
+                        lp = float(q["last_price"])
+                        ohlc_s = q.get("ohlc", {})
+                        cp = float(ohlc_s.get("close", lp))
+                        if cp > 0:
+                            sec_changes.append(((lp - cp) / cp) * 100.0)
+                        avg_p = float(q.get("average_price") or q.get("vwap") or lp)
+                        if lp >= avg_p:
+                            sec_above_vwap += 1
+                if sec_changes:
+                    avg_chg = sum(sec_changes) / len(sec_changes)
+                    vwap_ratio = sec_above_vwap / len(sec_changes)
+                    if avg_chg >= 0.15 and vwap_ratio >= 0.50:
+                        sec_status = "BULLISH"
+                    elif avg_chg <= -0.15 or vwap_ratio < 0.30:
+                        sec_status = "BEARISH"
+                    else:
+                        sec_status = "NEUTRAL"
+                    sector_performance[sec_name] = {
+                        "avg_change_pct": round(avg_chg, 2),
+                        "status": sec_status,
+                        "vwap_ratio": round(vwap_ratio, 2),
+                    }
+
         screened_stocks = []
 
         for item in self.STOCKS_UNIVERSE:
@@ -1126,12 +1168,32 @@ class StockScreenerService:
             # ============================================================
             is_nifty_choppy = nifty_status.get("regime") == "SIDEWAYS_CHOP"
 
-            # 3. Dynamic ATR Anti-Chasing Guard (Replaces arbitrary 1.8% fixed threshold)
+            # 3. Dynamic ATR & Distance Anti-Chasing Guard (Never buy extended tops)
             vwap_distance = abs(price - vwap)
             atr_extension_ratio = round(vwap_distance / max(atr, 0.01), 2)
-            is_extended = atr_extension_ratio > 1.25
+            open_distance_pct = round(abs(price - open_p) / max(open_p, 0.01) * 100.0, 2)
+            vwap_dist_pct = round(abs(price - vwap) / max(vwap, 0.01) * 100.0, 2)
+            is_extended = (open_distance_pct > 1.60) or (vwap_dist_pct > 0.85) or (atr_extension_ratio > 1.25)
 
-            # 4. Relative Strength (RS) vs NIFTY 50
+            # 4. Sector Trend Health Gatekeeper (Prevents buying into weak falling sectors like IT today)
+            stock_sector = item.get("sector")
+            sec_info = sector_performance.get(stock_sector)
+            sec_status = sec_info.get("status", "NEUTRAL") if sec_info else "NEUTRAL"
+            sector_blocked = False
+
+            if sec_info:
+                if signal == "BUY" and sec_status == "BEARISH":
+                    sector_blocked = True
+                    signal = "NO_TRADE"
+                    setup_type = f"Blocked: {stock_sector} in Sector Downtrend ({sec_info['avg_change_pct']}%)"
+                    ai_score = min(ai_score, 45)
+                elif signal == "SELL" and sec_status == "BULLISH":
+                    sector_blocked = True
+                    signal = "NO_TRADE"
+                    setup_type = f"Blocked: {stock_sector} in Sector Uptrend ({sec_info['avg_change_pct']}%)"
+                    ai_score = min(ai_score, 45)
+
+            # 5. Relative Strength (RS) vs NIFTY 50
             relative_strength = round(change_pct - nifty_change_pct, 2)
             if relative_strength >= 0.25:
                 rs_status = "OUTPERFORMER"
@@ -1139,6 +1201,21 @@ class StockScreenerService:
                 rs_status = "UNDERPERFORMER"
             else:
                 rs_status = "IN_LINE"
+
+            # 6. Actionable Entry Status (Traffic Light Protocol: 🟢 READY, 🟡 DIP, 🔴 MISSED)
+            if signal in ("BUY", "SELL") and not sector_blocked:
+                if is_extended:
+                    entry_status = "EXTENDED_MISSED"
+                    entry_badge = "🔴 OVER-EXTENDED (DO NOT CHASE)"
+                elif vwap_dist_pct <= 0.40 and rvol >= 1.35:
+                    entry_status = "READY_NOW"
+                    entry_badge = "🟢 FRESH ENTRY READY"
+                else:
+                    entry_status = "WAIT_FOR_DIP"
+                    entry_badge = "🟡 WAIT FOR RETEST / DIP"
+            else:
+                entry_status = "NO_TRADE"
+                entry_badge = "⚪ NO TRADE"
 
             # Quantitative Market Regime & Anti-Chasing Gatekeepers:
             is_alpha_breakout = (
@@ -1151,9 +1228,9 @@ class StockScreenerService:
                 setup_type = "Filtered: NIFTY in Sideways Chop"
                 ai_score = min(ai_score, 50)
             elif is_extended and signal in ("BUY", "SELL"):
-                # Stock is over-extended (>1.25x ATR from VWAP), high risk of pullback trap
-                setup_type = f"Extended ({atr_extension_ratio}x ATR from VWAP) - Wait for Retest"
-                ai_score = min(ai_score, 68)  # Disqualifies from Tier A+ auto-entry
+                # Stock is over-extended (>1.6% from open or >0.85% from VWAP), high risk of pullback trap
+                setup_type = f"Extended ({open_distance_pct:.1f}% from Open, {vwap_dist_pct:.2f}% from VWAP) - Wait for Retest"
+                ai_score = min(ai_score, 62)  # Disqualifies from Tier A+ auto-entry
 
             is_index_aligned = False
             alignment_status = "NEUTRAL"
@@ -1319,6 +1396,12 @@ class StockScreenerService:
                 "retest_level": pa_eval.retest_level,
                 "filter_verdict": pa_eval.filter_verdict if is_eligible else f"PROTECTED: {eligibility_reason}",
                 "pa_checklist": pa_eval.checklist,
+                "entry_status": entry_status,
+                "entry_badge": entry_badge,
+                "sector_status": sec_status,
+                "open_distance_pct": open_distance_pct,
+                "vwap_dist_pct": vwap_dist_pct,
+                "is_extended": is_extended,
             }
             screened_stocks.append(stock_entry)
 
@@ -1340,6 +1423,27 @@ class StockScreenerService:
         # Fallback if filtered list is small: only accept candidates with confirmed index alignment
         if not top_setups:
             top_setups = [s for s in screened_stocks if s["signal"] in ("BUY", "SELL") and s["ai_score"] >= 75 and s.get("index_aligned", False)][:5]
+
+        # =========================================================================
+        # TOP 4 SNIPER FOCUS PICKS (Highest Win-Rate Confluence, Strictly Non-Extended)
+        # =========================================================================
+        sniper_candidates = [
+            s for s in screened_stocks
+            if s["signal"] in ("BUY", "SELL")
+            and s.get("setup_tier") in ("A+", "A")
+            and s.get("entry_status") in ("READY_NOW", "WAIT_FOR_DIP")
+            and not s.get("is_extended", False)
+            and s.get("is_eligible", True)
+        ]
+        sniper_candidates.sort(key=lambda x: x.get("composite_rank_score", x["ai_score"]), reverse=True)
+        top_sniper_picks = sniper_candidates[:4]
+        # Fallback to top_setups if fewer than 4 meet strict sniper criteria
+        if len(top_sniper_picks) < 4:
+            for s in top_setups:
+                if s not in top_sniper_picks and s.get("signal") in ("BUY", "SELL"):
+                    top_sniper_picks.append(s)
+                if len(top_sniper_picks) >= 4:
+                    break
 
         # Top Setups Assembly with Multi-Mode Support
         intraday_candidates = [dict(s) for s in candidates if s.get("is_eligible", True)]
@@ -1623,9 +1727,11 @@ class StockScreenerService:
             "indices": indices,
             "funnel": funnel,
             "top_setups": top_setups,
+            "top_sniper_picks": top_sniper_picks,
             "all_screened_stocks": screened_stocks,
             "wallet_metrics": wallet_metrics,
             "market_session": market_session_info,
+            "sector_performance": sector_performance,
         }
         self._cached_screener_results[cache_key] = res
         return res

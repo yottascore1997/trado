@@ -87,6 +87,8 @@ export interface SetupTrackerSummary {
   active_setups: SetupTrackerItem[];
   closed_setups: SetupTrackerItem[];
   all_closed_history_count?: number;
+  top_sniper_picks?: any[];
+  sector_performance?: Record<string, any>;
 }
 
 interface OpenPosition {
@@ -722,6 +724,194 @@ export const PaperTradingDashboard: React.FC = () => {
       )}
 
       {/* ========================================================================= */}
+      {/* TOP 4 SNIPER FOCUS PICKS STRIP (High-Conviction • Anti-Chasing Filtered)  */}
+      {/* ========================================================================= */}
+      <div className="p-5 rounded-xl bg-gradient-to-b from-slate-900/95 to-slate-950/95 border border-slate-800 space-y-3.5 shadow-lg">
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div className="flex items-center space-x-2.5">
+            <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400">
+              <Target className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-extrabold text-sm text-slate-100 tracking-wide">
+                  🎯 TODAY'S TOP 4 SNIPER PICKS
+                </h3>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/90 text-emerald-300 border border-emerald-700/60 font-bold">
+                  FOCUS CONFLUENCE • ZERO EXTENDED TOPS
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 font-sans mt-0.5">
+                Pre-filtered for maximum win-rate: Leading sectors only, tight Stop Loss, and non-extended sweet-spot entries
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2 text-xs font-mono text-slate-400">
+            <span className="flex items-center gap-1.5 text-[11px] bg-slate-950 px-2.5 py-1 rounded-md border border-slate-800">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              Live Dynamic Selection
+            </span>
+          </div>
+        </div>
+
+        {/* 4 Cards Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {(setupTracker?.top_sniper_picks && setupTracker.top_sniper_picks.length > 0
+            ? setupTracker.top_sniper_picks
+            : []
+          ).slice(0, 4).map((pick: any, idx: number) => {
+            const isBuy = pick.signal === "BUY";
+            const isReady = pick.entry_status === "READY_NOW";
+            const isWait = pick.entry_status === "WAIT_FOR_DIP";
+            const isExtended = pick.is_extended || pick.entry_status === "EXTENDED_MISSED";
+
+            // Sizing on ₹50k with 2x leverage = ₹100,000 exposure
+            const pPrice = Number(pick.price || pick.entry_price || 100);
+            const pQty = Math.max(1, Math.floor(100000 / Math.max(pPrice, 0.05)));
+            const pMargin = Math.round((pQty * pPrice) / 2);
+
+            const rankBorderColors = [
+              "border-amber-500/60 hover:border-amber-400 bg-gradient-to-b from-amber-950/20 to-slate-900/90",
+              "border-emerald-500/50 hover:border-emerald-400 bg-gradient-to-b from-emerald-950/20 to-slate-900/90",
+              "border-cyan-500/50 hover:border-cyan-400 bg-gradient-to-b from-cyan-950/20 to-slate-900/90",
+              "border-indigo-500/50 hover:border-indigo-400 bg-gradient-to-b from-indigo-950/20 to-slate-900/90",
+            ];
+
+            const rankBadgeColors = [
+              "bg-amber-500 text-slate-950 font-black",
+              "bg-emerald-500 text-slate-950 font-black",
+              "bg-cyan-500 text-slate-950 font-black",
+              "bg-indigo-500 text-slate-950 font-black",
+            ];
+
+            return (
+              <div
+                key={pick.symbol || idx}
+                onClick={() => handleOpenTradeChart({
+                  position_id: `SNIPER-${pick.symbol}`,
+                  symbol: pick.symbol,
+                  side: pick.signal,
+                  quantity: pQty,
+                  entry_price: pPrice,
+                  current_price: pPrice,
+                  stop_loss: Number(pick.stop_loss || pPrice * 0.985),
+                  target_price: Number(pick.target_price || pPrice * 1.025),
+                  margin_required: pMargin,
+                  unrealized_pnl: 0,
+                  pnl_pct: 0,
+                  setup_type: pick.setup_type || "Sniper Confluence Setup",
+                  setup_tier: pick.setup_tier || "A+",
+                  product_type: "MIS (2x)",
+                  source: "UPSTOX_LIVE",
+                  entry_time: new Date().toISOString(),
+                  last_updated: new Date().toISOString(),
+                  sector: pick.sector,
+                  rvol: pick.rvol,
+                })}
+                className={`p-3.5 rounded-xl border transition-all cursor-pointer relative group flex flex-col justify-between space-y-3 shadow-md ${
+                  rankBorderColors[idx] || "border-slate-800 bg-slate-900/80"
+                }`}
+              >
+                {/* Header: Rank + Symbol + Action Badge */}
+                <div>
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
+                    <div className="flex items-center space-x-2">
+                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${rankBadgeColors[idx] || "bg-slate-700 text-white"}`}>
+                        #{idx + 1}
+                      </span>
+                      <span className="font-extrabold text-sm text-slate-100 group-hover:text-amber-300 transition-colors">
+                        {pick.symbol}
+                      </span>
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-700/60 font-mono">
+                        {pick.setup_tier || "A+"}
+                      </span>
+                    </div>
+
+                    <span
+                      className={`text-[9px] font-bold px-1.5 py-0.5 rounded font-mono uppercase ${
+                        isBuy ? "bg-emerald-950 text-emerald-400 border border-emerald-800" : "bg-rose-950 text-rose-400 border border-rose-800"
+                      }`}
+                    >
+                      {pick.signal}
+                    </span>
+                  </div>
+
+                  {/* Traffic Light Action Status Badge */}
+                  <div className="mt-2.5">
+                    {isReady && (
+                      <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-950/80 border border-emerald-600 text-emerald-300 text-[10px] font-bold shadow-sm">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                        <span>🟢 FRESH ENTRY READY</span>
+                      </div>
+                    )}
+                    {isWait && (
+                      <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-950/80 border border-amber-600 text-amber-300 text-[10px] font-bold">
+                        <span>🟡 WAIT FOR RETEST / DIP</span>
+                      </div>
+                    )}
+                    {isExtended && (
+                      <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-rose-950/80 border border-rose-700 text-rose-300 text-[10px] font-bold">
+                        <span>🔴 OVER-EXTENDED (DO NOT CHASE)</span>
+                      </div>
+                    )}
+                    {!isReady && !isWait && !isExtended && (
+                      <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-800 border border-slate-700 text-slate-300 text-[10px] font-mono">
+                        <span>🎯 HIGH CONVICTION SETUP</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Sizing & Price Action Matrix */}
+                <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800/80 space-y-1.5 text-xs font-mono">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 text-[11px]">Upstox LTP:</span>
+                    <span className="font-bold text-cyan-300 text-[12px]">₹{pPrice.toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 text-[11px]">Stop Loss:</span>
+                    <span className="text-rose-400 font-semibold text-[11px]">₹{Number(pick.stop_loss || pPrice * 0.985).toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 text-[11px]">Target:</span>
+                    <span className="text-emerald-400 font-semibold text-[11px]">₹{Number(pick.target_price || pPrice * 1.025).toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-800/70 text-[10px]">
+                    <span className="text-slate-400">Sizing (₹50k • 2x):</span>
+                    <span className="text-slate-200 font-bold">{pQty} shares (₹{pMargin.toLocaleString()})</span>
+                  </div>
+                </div>
+
+                {/* Bottom Tags: Sector + Pattern */}
+                <div className="flex flex-wrap items-center gap-1 text-[9px] font-sans">
+                  <span className="px-1.5 py-0.5 rounded bg-slate-850 text-slate-300 border border-slate-700">
+                    {pick.sector || "Equity Leader"}
+                  </span>
+                  {pick.rvol && (
+                    <span className="px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
+                      RVOL {pick.rvol}x
+                    </span>
+                  )}
+                  {pick.risk_reward && (
+                    <span className="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">
+                      R:R {pick.risk_reward}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {(!setupTracker?.top_sniper_picks || setupTracker.top_sniper_picks.length === 0) && (
+          <div className="py-6 text-center text-slate-500 font-mono text-xs">
+            Scanning for Top 4 Sniper setups with leading sector momentum and fresh sweet-spot entries...
+          </div>
+        )}
+      </div>
+
+      {/* ========================================================================= */}
       {/* SECTION 1: LIVE OPEN POSITIONS TABLE                                      */}
       {/* ========================================================================= */}
       <div className="p-5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3">
@@ -1213,6 +1403,21 @@ export const PaperTradingDashboard: React.FC = () => {
                             {c.exit_reason === "BREAKEVEN_EXIT" && (
                               <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-700 font-semibold">
                                 🛡️ Breakeven Exit
+                              </span>
+                            )}
+                            {c.exit_reason === "THESIS_INVALIDATED" && (
+                              <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-700 font-semibold">
+                                ⚡ Thesis Invalidated (Early Cut)
+                              </span>
+                            )}
+                            {c.exit_reason === "STAGNATION_EXIT" && (
+                              <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-700 font-semibold">
+                                ⏱️ Stagnation Cut (35m Time-Stop)
+                              </span>
+                            )}
+                            {c.exit_reason === "MARKET_REVERSAL_CRACK" && (
+                              <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-700 font-semibold">
+                                📉 Nifty Reversal Cut
                               </span>
                             )}
                             {c.exit_reason === "STOP_LOSS_HIT" && (

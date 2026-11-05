@@ -65,6 +65,12 @@ export interface StockSetupItem {
   is_eligible?: boolean;
   eligibility_reason?: string;
   source?: string;
+  entry_status?: "READY_NOW" | "WAIT_FOR_DIP" | "EXTENDED_MISSED" | "NO_TRADE";
+  entry_badge?: string;
+  sector_status?: string;
+  open_distance_pct?: number;
+  vwap_dist_pct?: number;
+  is_extended?: boolean;
 }
 
 
@@ -339,6 +345,24 @@ export const TopStockSetups: React.FC<TopStockSetupsProps> = ({
                       <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 shadow-sm">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                         LIVE
+                      </span>
+                    )}
+
+                    {/* Traffic Light Action Status Badge */}
+                    {stock.entry_status === "READY_NOW" && (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-600 flex items-center gap-1 shadow-sm">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        🟢 READY NOW
+                      </span>
+                    )}
+                    {stock.entry_status === "WAIT_FOR_DIP" && (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-950 text-amber-300 border border-amber-600">
+                        🟡 WAIT FOR DIP
+                      </span>
+                    )}
+                    {stock.entry_status === "EXTENDED_MISSED" && (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-rose-950 text-rose-300 border border-rose-700">
+                        🔴 EXTENDED
                       </span>
                     )}
                   </div>

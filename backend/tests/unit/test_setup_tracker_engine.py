@@ -178,3 +178,70 @@ def test_tracker_summary_metrics(tracker):
     assert summary2["win_rate_pct"] == 100.0
     assert summary2["realized_net"] > 0
 
+
+def test_thesis_invalidation_early_cut(tracker):
+    setups = [
+        {
+            "symbol": "ICICIBANK",
+            "setup_tier": "A+",
+            "signal": "BUY",
+            "price": 1000.0,
+            "stop_loss": 970.0,
+            "target_price": 1040.0,
+            "setup_type": "VWAP Breakout",
+        }
+    ]
+    t1 = datetime(2026, 11, 3, 10, 0, tzinfo=IST)
+    tracker.process_market_tick(
+        {"NSE_EQ:ICICIBANK": {"last_price": 1000.0, "average_price": 998.0}},
+        setups,
+        current_time=t1,
+    )
+    assert len(tracker.active_setups) == 1
+
+    # Price drops below VWAP: 990 (VWAP is 998)
+    for i in range(3):
+        tracker.process_market_tick(
+            {"NSE_EQ:ICICIBANK": {"last_price": 990.0, "average_price": 998.0}},
+            current_time=t1,
+        )
+
+    # After 3 ticks, should execute early thesis invalidation instead of waiting for SL 970
+    assert len(tracker.active_setups) == 0
+    assert len(tracker.closed_setups) == 1
+    assert tracker.closed_setups[0]["exit_reason"] == "THESIS_INVALIDATED"
+
+
+def test_stagnation_exit_early_cut(tracker):
+    setups = [
+        {
+            "symbol": "AXISBANK",
+            "setup_tier": "A+",
+            "signal": "BUY",
+            "price": 1000.0,
+            "stop_loss": 970.0,
+            "target_price": 1040.0,
+            "setup_type": "VWAP Breakout",
+        }
+    ]
+    t1 = datetime(2026, 11, 3, 10, 0, tzinfo=IST)
+    tracker.process_market_tick(
+        {"NSE_EQ:AXISBANK": {"last_price": 1000.0, "average_price": 998.0}},
+        setups,
+        current_time=t1,
+    )
+    assert len(tracker.active_setups) == 1
+
+    # 40 minutes later, stock is stagnant and underwater at 995 (-0.5%)
+    t2 = datetime(2026, 11, 3, 10, 42, tzinfo=IST)
+    tracker.process_market_tick(
+        {"NSE_EQ:AXISBANK": {"last_price": 995.0, "average_price": 998.0}},
+        current_time=t2,
+    )
+
+    # Should trigger STAGNATION_EXIT
+    assert len(tracker.active_setups) == 0
+    assert len(tracker.closed_setups) == 1
+    assert tracker.closed_setups[0]["exit_reason"] == "STAGNATION_EXIT"
+
+

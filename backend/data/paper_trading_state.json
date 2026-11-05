@@ -1,164 +1,9 @@
 {
   "wallet_budget": 10000.0,
-  "available_balance": 0.0,
-  "margin_locked": 26292.0,
+  "available_balance": 9897.51,
+  "margin_locked": 0,
   "auto_trading_enabled": true,
-  "open_positions": [
-    {
-      "position_id": "POS-DB041103",
-      "symbol": "HDFCBANK",
-      "side": "BUY",
-      "quantity": 72,
-      "entry_price": 1720.0,
-      "current_price": 1720.0,
-      "entry_vwap": 1710.0,
-      "current_vwap": 1710.0,
-      "ema9": 1717.0,
-      "ema20": 1708.5,
-      "retest_level": 1710.0,
-      "rvol": 3.64,
-      "market_structure": "HH_HL",
-      "ai_score": 95,
-      "price_action_score": 20,
-      "setup_checklist": [
-        {
-          "rule": "Market Regime Filter (Trending Confirmed)",
-          "passed": true
-        },
-        {
-          "rule": "Trend Confirmation (5m & 15m)",
-          "passed": true
-        },
-        {
-          "rule": "VWAP Anchor (Price > VWAP for BUY)",
-          "passed": true
-        },
-        {
-          "rule": "EMA 9 > EMA 20 Alignment",
-          "passed": true
-        },
-        {
-          "rule": "Volume Participation (Time-Normalized RVOL \u2265 1.5x: 3.64x)",
-          "passed": true
-        },
-        {
-          "rule": "Opening Range Breakout (ORB Buffer)",
-          "passed": false
-        },
-        {
-          "rule": "Anti-Chasing ATR Buffer (0.4x ATR <= 1.25x)",
-          "passed": true
-        },
-        {
-          "rule": "Relative Strength vs NIFTY (+0.58%)",
-          "passed": true
-        },
-        {
-          "rule": "Risk:Reward >= 1:1.5",
-          "passed": true
-        },
-        {
-          "rule": "NSE Market Alignment (ALIGNED_BULLISH)",
-          "passed": true
-        }
-      ],
-      "change_pct": 1.06,
-      "sector": "Private Banking",
-      "initial_stop_loss": 1701.25,
-      "stop_loss": 1701.25,
-      "target_price": 1750.0,
-      "highest_price": 1720.0,
-      "lowest_price": 1720.0,
-      "trailing_stage": "INITIAL",
-      "vwap_breach_count": 0,
-      "margin_required": 24768.0,
-      "unrealized_pnl": 0.0,
-      "pnl_pct": 0.0,
-      "setup_type": "Upstox Live VWAP Breakout & Retest",
-      "setup_tier": "A+",
-      "product_type": "MIS",
-      "source": "UPSTOX_LIVE",
-      "entry_time": "2026-10-28T09:14:53.067590+00:00",
-      "last_updated": "2026-11-03T02:17:07.656344+00:00"
-    },
-    {
-      "position_id": "POS-CEC882E9",
-      "symbol": "TATASTEEL",
-      "side": "BUY",
-      "quantity": 50,
-      "entry_price": 152.4,
-      "current_price": 152.4,
-      "entry_vwap": 152.4,
-      "current_vwap": 152.4,
-      "ema9": 152.1,
-      "ema20": 151.64,
-      "retest_level": 151.79,
-      "rvol": 1.85,
-      "market_structure": "HH_HL",
-      "ai_score": 86,
-      "price_action_score": 18,
-      "setup_checklist": [
-        {
-          "rule": "VWAP Breakout Buffer (+0.10%)",
-          "passed": true,
-          "detail": "Price \u20b9152.40 confirmed above VWAP \u20b9152.40"
-        },
-        {
-          "rule": "EMA 9 > EMA 20 Momentum Ribbon",
-          "passed": true,
-          "detail": "EMA 9 (\u20b9152.10) > EMA 20 (\u20b9151.64)"
-        },
-        {
-          "rule": "Institutional Volume Surge (1.85x RVOL)",
-          "passed": true,
-          "detail": "1.85x Relative Volume confirmed on breakout"
-        },
-        {
-          "rule": "Market Structure (HH_HL)",
-          "passed": true,
-          "detail": "Constructive Higher Highs & Higher Lows sequence"
-        },
-        {
-          "rule": "Key Breakout & S/R Retest",
-          "passed": true,
-          "detail": "Prior resistance flipped to support near \u20b9151.79"
-        },
-        {
-          "rule": "NIFTY 50 Index Alignment",
-          "passed": true,
-          "detail": "Sector and market trend aligned with trade direction"
-        },
-        {
-          "rule": "Anti-Chasing ATR Guard",
-          "passed": true,
-          "detail": "Price within acceptable ATR distance from VWAP"
-        },
-        {
-          "rule": "Strict 1:2+ Risk:Reward",
-          "passed": true,
-          "detail": "Risk \u20b93.40 : Reward \u20b97.60"
-        }
-      ],
-      "change_pct": 0.0,
-      "sector": "NSE Equity",
-      "initial_stop_loss": 149.0,
-      "stop_loss": 149.0,
-      "target_price": 160.0,
-      "highest_price": 152.4,
-      "lowest_price": 152.4,
-      "trailing_stage": "INITIAL",
-      "vwap_breach_count": 0,
-      "margin_required": 1524.0,
-      "unrealized_pnl": 0.0,
-      "pnl_pct": 0.0,
-      "setup_type": "VWAP Breakout",
-      "setup_tier": "A",
-      "product_type": "MIS",
-      "source": "UPSTOX_LIVE",
-      "entry_time": "2026-11-03T02:17:07.688008+00:00",
-      "last_updated": "2026-11-03T02:17:07.688008+00:00"
-    }
-  ],
+  "open_positions": [],
   "closed_trades": [
     {
       "trade_id": "POS-6F9800EE",
@@ -1934,7 +1779,155 @@
       ],
       "change_pct": 0.0,
       "sector": "NSE Equity"
+    },
+    {
+      "trade_id": "POS-DB041103",
+      "symbol": "HDFCBANK",
+      "side": "BUY",
+      "quantity": 72,
+      "entry_price": 1720.0,
+      "exit_price": 1720.0,
+      "entry_time": "2026-10-28T09:14:53.067590+00:00",
+      "exit_time": "2026-11-05T23:34:21.527346+05:30",
+      "date": "2026-11-05",
+      "gross_pnl": 0.0,
+      "charges": 90.81,
+      "net_pnl": -90.81,
+      "exit_reason": "INTRADAY_SQUARE_OFF",
+      "setup_type": "Upstox Live VWAP Breakout & Retest",
+      "setup_tier": "A+",
+      "product_type": "MIS",
+      "trailing_stage": "INITIAL",
+      "initial_stop_loss": 1701.25,
+      "stop_loss": 1701.25,
+      "target_price": 1750.0,
+      "entry_vwap": 1710.0,
+      "ema9": 1717.0,
+      "ema20": 1708.5,
+      "retest_level": 1710.0,
+      "rvol": 3.64,
+      "market_structure": "HH_HL",
+      "ai_score": 95,
+      "price_action_score": 20,
+      "setup_checklist": [
+        {
+          "rule": "Market Regime Filter (Trending Confirmed)",
+          "passed": true
+        },
+        {
+          "rule": "Trend Confirmation (5m & 15m)",
+          "passed": true
+        },
+        {
+          "rule": "VWAP Anchor (Price > VWAP for BUY)",
+          "passed": true
+        },
+        {
+          "rule": "EMA 9 > EMA 20 Alignment",
+          "passed": true
+        },
+        {
+          "rule": "Volume Participation (Time-Normalized RVOL \u2265 1.5x: 3.64x)",
+          "passed": true
+        },
+        {
+          "rule": "Opening Range Breakout (ORB Buffer)",
+          "passed": false
+        },
+        {
+          "rule": "Anti-Chasing ATR Buffer (0.4x ATR <= 1.25x)",
+          "passed": true
+        },
+        {
+          "rule": "Relative Strength vs NIFTY (+0.58%)",
+          "passed": true
+        },
+        {
+          "rule": "Risk:Reward >= 1:1.5",
+          "passed": true
+        },
+        {
+          "rule": "NSE Market Alignment (ALIGNED_BULLISH)",
+          "passed": true
+        }
+      ],
+      "change_pct": 1.06,
+      "sector": "Private Banking"
+    },
+    {
+      "trade_id": "POS-CEC882E9",
+      "symbol": "TATASTEEL",
+      "side": "BUY",
+      "quantity": 50,
+      "entry_price": 152.4,
+      "exit_price": 152.4,
+      "entry_time": "2026-11-03T02:17:07.688008+00:00",
+      "exit_time": "2026-11-05T23:34:21.529249+05:30",
+      "date": "2026-11-05",
+      "gross_pnl": 0.0,
+      "charges": 11.68,
+      "net_pnl": -11.68,
+      "exit_reason": "INTRADAY_SQUARE_OFF",
+      "setup_type": "VWAP Breakout",
+      "setup_tier": "A",
+      "product_type": "MIS",
+      "trailing_stage": "INITIAL",
+      "initial_stop_loss": 149.0,
+      "stop_loss": 149.0,
+      "target_price": 160.0,
+      "entry_vwap": 152.4,
+      "ema9": 152.1,
+      "ema20": 151.64,
+      "retest_level": 151.79,
+      "rvol": 1.85,
+      "market_structure": "HH_HL",
+      "ai_score": 86,
+      "price_action_score": 18,
+      "setup_checklist": [
+        {
+          "rule": "VWAP Breakout Buffer (+0.10%)",
+          "passed": true,
+          "detail": "Price \u20b9152.40 confirmed above VWAP \u20b9152.40"
+        },
+        {
+          "rule": "EMA 9 > EMA 20 Momentum Ribbon",
+          "passed": true,
+          "detail": "EMA 9 (\u20b9152.10) > EMA 20 (\u20b9151.64)"
+        },
+        {
+          "rule": "Institutional Volume Surge (1.85x RVOL)",
+          "passed": true,
+          "detail": "1.85x Relative Volume confirmed on breakout"
+        },
+        {
+          "rule": "Market Structure (HH_HL)",
+          "passed": true,
+          "detail": "Constructive Higher Highs & Higher Lows sequence"
+        },
+        {
+          "rule": "Key Breakout & S/R Retest",
+          "passed": true,
+          "detail": "Prior resistance flipped to support near \u20b9151.79"
+        },
+        {
+          "rule": "NIFTY 50 Index Alignment",
+          "passed": true,
+          "detail": "Sector and market trend aligned with trade direction"
+        },
+        {
+          "rule": "Anti-Chasing ATR Guard",
+          "passed": true,
+          "detail": "Price within acceptable ATR distance from VWAP"
+        },
+        {
+          "rule": "Strict 1:2+ Risk:Reward",
+          "passed": true,
+          "detail": "Risk \u20b93.40 : Reward \u20b97.60"
+        }
+      ],
+      "change_pct": 0.0,
+      "sector": "NSE Equity"
     }
   ],
-  "last_updated": "2026-11-03T02:17:07.689426+00:00"
+  "last_updated": "2026-11-05T18:06:46.939960+00:00"
 }

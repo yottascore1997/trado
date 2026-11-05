@@ -146,11 +146,21 @@ class SetupTrackerEngine:
                     pos["current_price"] = current_price
                     pos["last_updated"] = datetime.now(timezone.utc).isoformat()
 
+                    # Live VWAP calculation from exchange quote
+                    ohlc = quote.get("ohlc", {})
+                    open_p = float(ohlc.get("open", current_price))
+                    high_p = float(ohlc.get("high", current_price))
+                    low_p = float(ohlc.get("low", current_price))
+                    curr_vwap = float(quote.get("average_price") or quote.get("vwap") or round((open_p + high_p + low_p + current_price) / 4.0, 2))
+
                     side = pos["side"]
                     entry = pos["entry_price"]
                     qty = pos["quantity"]
                     target = pos["target_price"]
                     margin = pos["margin_required"]
+
+                    # Accurate regulatory friction per share (~₹85 round-trip charges covered)
+                    per_share_friction = round((85.0 / max(qty, 1)) + 0.05, 2)
 
                     if side == "BUY":
                         pnl = round((current_price - entry) * qty, 2)
@@ -186,16 +196,42 @@ class SetupTrackerEngine:
                                     pos["stop_loss"] = lock_px
                                     pos["trailing_stage"] = "PROFIT_LOCK_25"
                                     pos["trailing_description"] = f"Profit Lock: 25% Target Secured (₹{lock_px})"
-                            # Stage 1: True Breakeven (35%+ of target distance) -> Shift SL to Entry + Charges Friction
+                            # Stage 1: True Breakeven (35%+ of target distance) -> Shift SL to Entry + Full Charges Friction
                             elif gain_ratio >= 0.35:
-                                friction = max(0.05, round(entry * 0.0006 + 0.05, 2))
-                                be_sl = round(entry + friction, 2)
+                                be_sl = round(entry + per_share_friction, 2)
                                 if pos["stop_loss"] < be_sl:
                                     pos["stop_loss"] = be_sl
                                     pos["trailing_stage"] = "BREAKEVEN"
                                     pos["trailing_description"] = f"Breakeven Protected: Entry + Charges (₹{be_sl})"
 
-                        # Exit checks
+                        # Dynamic In-Trade Defensive Exits
+                        # A. Thesis Invalidation (Price sustained below VWAP for 3 ticks)
+                        if curr_vwap > 0 and current_price < (curr_vwap - max(0.15, curr_vwap * 0.002)):
+                            if (entry - current_price) >= max(0.20, entry * 0.0025):
+                                b_count = pos.get("vwap_breach_count", 0) + 1
+                                pos["vwap_breach_count"] = b_count
+                                if b_count >= 3:
+                                    logger.info(f"⚡ [THESIS INVALIDATED] {sym}: Price sustained below VWAP. Early exit.")
+                                    setups_to_close.append((pos["setup_id"], "THESIS_INVALIDATED", current_price))
+                        else:
+                            pos["vwap_breach_count"] = 0
+
+                        # B. Stagnation Time-Stop (Open > 35m and underwater by >= 0.30%)
+                        entry_t_str = pos.get("entry_time")
+                        if entry_t_str and pos["setup_id"] not in [s[0] for s in setups_to_close]:
+                            try:
+                                edt = datetime.fromisoformat(entry_t_str)
+                                if edt.tzinfo is None:
+                                    edt = edt.replace(tzinfo=IST)
+                                elapsed_mins = (now_ist - edt).total_seconds() / 60.0
+                                if elapsed_mins >= 35.0 and pos.get("unrealized_pnl", 0.0) < 0:
+                                    if abs(pos.get("pnl_pct", 0.0)) >= 0.30:
+                                        logger.info(f"⏱️ [STAGNATION EXIT] {sym}: Stalled after {elapsed_mins:.0f}m.")
+                                        setups_to_close.append((pos["setup_id"], "STAGNATION_EXIT", current_price))
+                            except Exception:
+                                pass
+
+                        # Standard Exit checks
                         if is_square_off_time:
                             setups_to_close.append((pos["setup_id"], "INTRADAY_SQUARE_OFF", current_price))
                         elif current_price >= target:
@@ -243,16 +279,42 @@ class SetupTrackerEngine:
                                     pos["stop_loss"] = lock_px
                                     pos["trailing_stage"] = "PROFIT_LOCK_25"
                                     pos["trailing_description"] = f"Profit Lock: 25% Target Secured (₹{lock_px})"
-                            # Stage 1: True Breakeven (35%+ of target distance) -> Shift SL to Entry - Charges Friction
+                            # Stage 1: True Breakeven (35%+ of target distance) -> Shift SL to Entry - Full Charges Friction
                             elif gain_ratio >= 0.35:
-                                friction = max(0.05, round(entry * 0.0006 + 0.05, 2))
-                                be_sl = round(entry - friction, 2)
+                                be_sl = round(entry - per_share_friction, 2)
                                 if pos["stop_loss"] > be_sl:
                                     pos["stop_loss"] = be_sl
                                     pos["trailing_stage"] = "BREAKEVEN"
                                     pos["trailing_description"] = f"Breakeven Protected: Entry - Charges (₹{be_sl})"
 
-                        # Exit checks
+                        # Dynamic In-Trade Defensive Exits for SELL
+                        # A. Thesis Invalidation
+                        if curr_vwap > 0 and current_price > (curr_vwap + max(0.15, curr_vwap * 0.002)):
+                            if (current_price - entry) >= max(0.20, entry * 0.0025):
+                                b_count = pos.get("vwap_breach_count", 0) + 1
+                                pos["vwap_breach_count"] = b_count
+                                if b_count >= 3:
+                                    logger.info(f"⚡ [THESIS INVALIDATED] {sym}: Price sustained above VWAP. Early exit.")
+                                    setups_to_close.append((pos["setup_id"], "THESIS_INVALIDATED", current_price))
+                        else:
+                            pos["vwap_breach_count"] = 0
+
+                        # B. Stagnation Time-Stop
+                        entry_t_str = pos.get("entry_time")
+                        if entry_t_str and pos["setup_id"] not in [s[0] for s in setups_to_close]:
+                            try:
+                                edt = datetime.fromisoformat(entry_t_str)
+                                if edt.tzinfo is None:
+                                    edt = edt.replace(tzinfo=IST)
+                                elapsed_mins = (now_ist - edt).total_seconds() / 60.0
+                                if elapsed_mins >= 35.0 and pos.get("unrealized_pnl", 0.0) < 0:
+                                    if abs(pos.get("pnl_pct", 0.0)) >= 0.30:
+                                        logger.info(f"⏱️ [STAGNATION EXIT] {sym}: Stalled after {elapsed_mins:.0f}m.")
+                                        setups_to_close.append((pos["setup_id"], "STAGNATION_EXIT", current_price))
+                            except Exception:
+                                pass
+
+                        # Standard Exit checks
                         if is_square_off_time:
                             setups_to_close.append((pos["setup_id"], "INTRADAY_SQUARE_OFF", current_price))
                         elif current_price <= target:
@@ -265,6 +327,31 @@ class SetupTrackerEngine:
                                 else ("BREAKEVEN_EXIT" if stage == "BREAKEVEN" else "STOP_LOSS_HIT")
                             )
                             setups_to_close.append((pos["setup_id"], reason, current_price))
+
+            # Macro NIFTY 50 Crack & Reversal Guard
+            nifty_quote = live_quotes.get("NSE_INDEX:Nifty 50") or live_quotes.get("NSE_INDEX|Nifty 50")
+            if nifty_quote and "last_price" in nifty_quote:
+                n_ltp = float(nifty_quote["last_price"])
+                n_ohlc = nifty_quote.get("ohlc", {})
+                n_open = float(n_ohlc.get("open", n_ltp))
+                n_high = float(n_ohlc.get("high", n_ltp))
+                n_low = float(n_ohlc.get("low", n_ltp))
+                n_vwap = round((n_open + n_high + n_low + n_ltp) / 4.0, 1) if n_open > 0 else n_ltp
+
+                # If NIFTY cracks > 0.20% below intraday VWAP, market is under sharp institutional liquidation
+                if n_vwap > 0 and n_ltp < (n_vwap * 0.9980):
+                    for pos in self.active_setups:
+                        if pos["side"] == "BUY" and pos["setup_id"] not in [s[0] for s in setups_to_close]:
+                            if pos.get("unrealized_pnl", 0.0) < 0:
+                                logger.info(f"📉 [NIFTY CRACK EXIT] {pos['symbol']}: Nifty 50 cracked below VWAP. Defensive cut.")
+                                setups_to_close.append((pos["setup_id"], "MARKET_REVERSAL_CRACK", pos["current_price"]))
+                            else:
+                                per_sh_f = round((85.0 / max(pos["quantity"], 1)) + 0.05, 2)
+                                be_sl = round(pos["entry_price"] + per_sh_f, 2)
+                                if pos["stop_loss"] < be_sl:
+                                    pos["stop_loss"] = be_sl
+                                    pos["trailing_stage"] = "BREAKEVEN"
+                                    pos["trailing_description"] = f"NIFTY Crack: Protected at Cost (₹{be_sl})"
 
             # Execute pending closures
             for setup_id, reason, exit_price in setups_to_close:
@@ -283,6 +370,11 @@ class SetupTrackerEngine:
                     tier = setup.get("setup_tier", "B")
                     signal = setup.get("signal")
                     if tier not in ("A+", "A") or signal not in ("BUY", "SELL"):
+                        continue
+
+                    # Strict Anti-Chasing Filter: Never enter over-extended setups (>1.6% from open or >0.85% from VWAP)
+                    if setup.get("is_extended", False) or setup.get("entry_status") == "EXTENDED_MISSED":
+                        logger.debug(f"Skipping extended setup for {sym}: Price already over-extended.")
                         continue
 
                     # Avoid duplicate active positions for the same symbol
@@ -474,6 +566,17 @@ class SetupTrackerEngine:
 
             total_margin_deployed = round(sum(p.get("margin_required", 0.0) for p in self.active_setups), 2)
 
+            # Retrieve Top 4 Sniper Focus Picks from Screener Service
+            top_sniper_picks = []
+            sector_perf = {}
+            try:
+                from app.services.stock_screener import stock_screener_service
+                screener_data = stock_screener_service.screen_stocks()
+                top_sniper_picks = screener_data.get("top_sniper_picks", [])[:4]
+                sector_perf = screener_data.get("sector_performance", {})
+            except Exception as e:
+                logger.debug(f"Could not fetch top sniper picks for tracker summary: {e}")
+
             return {
                 "base_capital_per_trade": self.base_capital,
                 "leverage": self.leverage,
@@ -496,6 +599,8 @@ class SetupTrackerEngine:
                 "active_setups": list(self.active_setups),
                 "closed_setups": today_closed,
                 "all_closed_history_count": len(self.closed_setups),
+                "top_sniper_picks": top_sniper_picks,
+                "sector_performance": sector_perf,
             }
 
 
