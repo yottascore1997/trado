@@ -1,6 +1,6 @@
 {
-  "wallet_budget": 10000.0,
-  "available_balance": 9897.51,
+  "wallet_budget": 100000.0,
+  "available_balance": 100000.0,
   "margin_locked": 0,
   "auto_trading_enabled": true,
   "open_positions": [],
@@ -1929,5 +1929,5 @@
       "sector": "NSE Equity"
     }
   ],
-  "last_updated": "2026-11-05T18:06:46.939960+00:00"
+  "last_updated": "2026-11-10T09:55:27.812098+00:00"
 }
