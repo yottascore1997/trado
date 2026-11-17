@@ -550,6 +550,21 @@ async def close_setup_tracker_position(payload: dict):
     return res
 
 
+@router.post("/setups/live-tracker/close-all")
+async def close_all_setup_tracker_positions():
+    """
+    Manually closes all active setup positions in the tracker.
+    """
+    from app.services.setup_tracker_engine import setup_tracker_engine
+    closed = setup_tracker_engine.close_all()
+    return {
+        "success": True,
+        "closed_count": len(closed),
+        "closed_setups": closed,
+        "summary": setup_tracker_engine.get_summary(),
+    }
+
+
 @router.post("/setups/live-tracker/reset")
 async def reset_setup_tracker():
     """

@@ -245,3 +245,113 @@ def test_stagnation_exit_early_cut(tracker):
     assert tracker.closed_setups[0]["exit_reason"] == "STAGNATION_EXIT"
 
 
+def test_symbol_lock_prevents_same_day_reentry(tracker):
+    # Setup for ICICIBANK
+    setups = [
+        {
+            "symbol": "ICICIBANK",
+            "setup_tier": "A+",
+            "signal": "BUY",
+            "price": 1000.0,
+            "stop_loss": 980.0,
+            "target_price": 1030.0,
+            "setup_type": "VWAP Breakout",
+        }
+    ]
+    t1 = datetime(2026, 11, 3, 10, 0, tzinfo=IST)
+    tracker.process_market_tick(
+        {"NSE_EQ:ICICIBANK": {"last_price": 1000.0, "average_price": 998.0}},
+        setups,
+        current_time=t1,
+    )
+    assert len(tracker.active_setups) == 1
+
+    # Manually close it
+    setup_id = tracker.active_setups[0]["setup_id"]
+    tracker.manual_close(setup_id)
+    assert len(tracker.active_setups) == 0
+    assert len(tracker.closed_setups) == 1
+    assert tracker.closed_setups[0]["symbol"] == "ICICIBANK"
+
+    # Screener triggers ICICIBANK again on the same day at 11:00 AM
+    t2 = datetime(2026, 11, 3, 11, 0, tzinfo=IST)
+    tracker.process_market_tick(
+        {"NSE_EQ:ICICIBANK": {"last_price": 1005.0, "average_price": 1000.0}},
+        setups,
+        current_time=t2,
+    )
+
+    # Symbol lock must prevent re-entry of ICICIBANK today
+    assert len(tracker.active_setups) == 0
+    assert len(tracker.closed_setups) == 1
+
+
+def test_opening_settlement_guard_blocks_pre_930(tracker):
+    setups = [
+        {
+            "symbol": "HDFCBANK",
+            "setup_tier": "A+",
+            "signal": "BUY",
+            "price": 1600.0,
+            "stop_loss": 1580.0,
+            "target_price": 1640.0,
+            "setup_type": "VWAP Breakout",
+        }
+    ]
+    # 09:20 AM (Within opening settlement window 09:15-09:30)
+    t_early = datetime(2026, 11, 3, 9, 20, tzinfo=IST)
+    tracker.process_market_tick(
+        {"NSE_EQ:HDFCBANK": {"last_price": 1600.0, "average_price": 1595.0}},
+        setups,
+        current_time=t_early,
+    )
+    # Must be blocked by opening settlement guard
+    assert len(tracker.active_setups) == 0
+
+    # 09:35 AM (Settlement period complete)
+    t_valid = datetime(2026, 11, 3, 9, 35, tzinfo=IST)
+    tracker.process_market_tick(
+        {"NSE_EQ:HDFCBANK": {"last_price": 1600.0, "average_price": 1595.0}},
+        setups,
+        current_time=t_valid,
+    )
+    # Now entry is allowed
+    assert len(tracker.active_setups) == 1
+    assert tracker.active_setups[0]["symbol"] == "HDFCBANK"
+
+
+def test_daily_trade_cap_max_8(tracker):
+    tracker.max_daily_trades = 3  # Set cap to 3 for test
+    setups = [
+        {"symbol": f"SYM{i}", "setup_tier": "A+", "signal": "BUY", "price": 100.0, "stop_loss": 98.0, "target_price": 104.0}
+        for i in range(1, 6)
+    ]
+    quotes = {f"NSE_EQ:SYM{i}": {"last_price": 100.0, "average_price": 99.0} for i in range(1, 6)}
+
+    t = datetime(2026, 11, 3, 10, 0, tzinfo=IST)
+    tracker.process_market_tick(quotes, setups, current_time=t)
+
+    # Only 3 should enter due to daily cap
+    assert len(tracker.active_setups) == 3
+
+
+def test_close_all_active_positions(tracker):
+    setups = [
+        {"symbol": "SBIN", "setup_tier": "A+", "signal": "BUY", "price": 800.0, "stop_loss": 790.0, "target_price": 820.0},
+        {"symbol": "TATASTEEL", "setup_tier": "A", "signal": "BUY", "price": 150.0, "stop_loss": 147.0, "target_price": 155.0},
+    ]
+    quotes = {
+        "NSE_EQ:SBIN": {"last_price": 800.0, "average_price": 798.0},
+        "NSE_EQ:TATASTEEL": {"last_price": 150.0, "average_price": 149.0},
+    }
+    t = datetime(2026, 11, 3, 10, 0, tzinfo=IST)
+    tracker.process_market_tick(quotes, setups, current_time=t)
+    assert len(tracker.active_setups) == 2
+
+    closed = tracker.close_all()
+    assert len(closed) == 2
+    assert len(tracker.active_setups) == 0
+    assert len(tracker.closed_setups) == 2
+
+
+

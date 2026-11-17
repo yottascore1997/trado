@@ -19,6 +19,7 @@ import {
   Radio,
   Sparkles,
   Flame,
+  Target,
   X,
 } from "lucide-react";
 
@@ -48,9 +49,28 @@ interface SidebarProps {
 
 export const navGroups: NavGroup[] = [
   {
-    group: "ANALYTICS & SIGNALS",
+    group: "TRADING & EXECUTION",
     items: [
       { id: "dashboard", label: "Dashboard", icon: Activity },
+      { id: "today_trades", label: "Today Trades", icon: Target, badge: "LIVE", badgeColor: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
+      { id: "paper", label: "Paper Trading", icon: ShieldAlert, badge: "₹100k", badgeColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30" },
+      /*
+      { id: "screener", label: "AI Stock Screener", icon: Flame, badge: "🔥 TOP 5", badgeColor: "bg-amber-500/20 text-amber-300 border-amber-500/40" },
+      { id: "signals", label: "Live Signals", icon: Zap, badge: "LIVE", badgeColor: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
+      { id: "markets", label: "Markets & Indices", icon: TrendingUp },
+      { id: "charts", label: "Technical Charts", icon: BarChart2 },
+      { id: "backtest", label: "Historical Backtest", icon: Layers },
+      { id: "aimodel", label: "AI Model Engine", icon: Cpu, badge: "XGB", badgeColor: "bg-purple-500/20 text-purple-400 border-purple-500/30" },
+      { id: "performance", label: "Performance", icon: FileText },
+      { id: "risk", label: "Circuit Breakers", icon: Sliders },
+      { id: "settings", label: "Terminal Settings", icon: Settings },
+      */
+    ],
+  },
+  /*
+  {
+    group: "ANALYTICS & SIGNALS",
+    items: [
       { id: "screener", label: "AI Stock Screener", icon: Flame, badge: "🔥 TOP 5", badgeColor: "bg-amber-500/20 text-amber-300 border-amber-500/40" },
       { id: "signals", label: "Live Signals", icon: Zap, badge: "LIVE", badgeColor: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
       { id: "markets", label: "Markets & Indices", icon: TrendingUp },
@@ -60,7 +80,6 @@ export const navGroups: NavGroup[] = [
   {
     group: "EXECUTION & LAB",
     items: [
-      { id: "paper", label: "Paper Trading", icon: ShieldAlert, badge: "₹100k", badgeColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30" },
       { id: "backtest", label: "Historical Backtest", icon: Layers },
       { id: "aimodel", label: "AI Model Engine", icon: Cpu, badge: "XGB", badgeColor: "bg-purple-500/20 text-purple-400 border-purple-500/30" },
       { id: "performance", label: "Performance", icon: FileText },
@@ -73,6 +92,7 @@ export const navGroups: NavGroup[] = [
       { id: "settings", label: "Terminal Settings", icon: Settings },
     ],
   },
+  */
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({

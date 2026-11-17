@@ -40,6 +40,10 @@ const tabTitles: Record<string, { title: string; subtitle: string }> = {
     title: "Technical Charting Suite",
     subtitle: "Multi-timeframe Candlesticks, VWAP Anchor, EMA 9/20/50 & RSI Radar",
   },
+  today_trades: {
+    title: "Today's Trades & Live Setup Tracker",
+    subtitle: "Simulated Execution of A+ & A Screener Setups • ₹50k (2x Leverage) with Multi-Stage Trailing SL",
+  },
   paper: {
     title: "Paper Trading Simulator",
     subtitle: "Zero-Risk Execution Environment with Dynamic Slippage & Brokerage",

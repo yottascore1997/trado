@@ -136,29 +136,33 @@ class PriceActionEngine:
         elif is_buy:
             structure = "HH_HL"
             pa_setup = "Breakout + Retest Continuation" if rvol >= 1.8 else "Support Retest / Dynamic VWAP"
-            breakout_passed = (current_price > vwap) and (range_pos >= 0.60)
-            retest_passed = (current_price >= retest_level) and (current_price > vwap)
+            is_below_day_open = (day_open is not None and current_price < day_open)
+            breakout_passed = (current_price > vwap) and (range_pos >= 0.60) and not is_below_day_open
+            retest_passed = (current_price >= retest_level) and (current_price > vwap) and not is_below_day_open
             vol_passed = rvol >= 1.4
-            candle_passed = (day_open is None or current_price >= day_open) and (rvol >= 1.4)
+            candle_passed = not is_below_day_open and (rvol >= 1.4)
 
-            structure_pts = 4 if bullish_ribbon else 0
-            breakout_pts = 4 if breakout_passed else (2 if range_pos >= 0.50 else 0)
-            retest_pts = 4 if retest_passed else 2
+            structure_pts = 4 if (bullish_ribbon and not is_below_day_open) else 0
+            breakout_pts = 4 if breakout_passed else (2 if (range_pos >= 0.50 and not is_below_day_open) else 0)
+            retest_pts = 4 if retest_passed else (2 if not is_below_day_open else 0)
             vol_pts = 3 if rvol >= 1.75 else (2 if rvol >= 1.4 else (1 if rvol >= 1.15 else 0))
-            candle_pts = 2 if candle_passed else (1 if (day_open is None or current_price >= day_open) else 0)
+            candle_pts = 2 if candle_passed else (1 if not is_below_day_open else 0)
 
             checklist = [
-                {"rule": "Market Structure (HH + HL sequence)", "points": structure_pts, "max": 4, "passed": bullish_ribbon, "detail": "Series of Higher Highs & Higher Lows on 5m/15m" if bullish_ribbon else "EMA 9 < EMA 20 (Downward momentum drag)"},
-                {"rule": "Breakout Quality (Full-body close)", "points": breakout_pts, "max": 4, "passed": breakout_passed, "detail": f"Strong bullish expansion above VWAP ₹{vwap:.2f} (Top {int(max(0, 1-range_pos)*100)}% of range)" if breakout_passed else "Price hovering in mid-range without breakout"},
+                {"rule": "Market Structure (HH + HL sequence)", "points": structure_pts, "max": 4, "passed": bullish_ribbon and not is_below_day_open, "detail": "Series of Higher Highs & Higher Lows on 5m/15m" if (bullish_ribbon and not is_below_day_open) else "Trading below Day Open or EMA 9 < 20"},
+                {"rule": "Breakout Quality (Full-body close)", "points": breakout_pts, "max": 4, "passed": breakout_passed, "detail": f"Strong bullish expansion above VWAP ₹{vwap:.2f} (Top {int(max(0, 1-range_pos)*100)}% of range)" if breakout_passed else "Price hovering in mid-range or below open"},
                 {"rule": "Retest Confirmation (Support held)", "points": retest_pts, "max": 4, "passed": retest_passed, "detail": f"Prior resistance flipped to support near ₹{retest_level:.2f}" if retest_passed else "Awaiting clean support retest"},
                 {"rule": "Volume Context (Breakout Surge)", "points": vol_pts, "max": 3, "passed": vol_passed, "detail": f"{rvol}x volume expansion on breakout" if vol_passed else f"Weak volume participation ({rvol}x < 1.4x)"},
-                {"rule": "Key S/R Interaction", "points": 3, "max": 3, "passed": True, "detail": "Breakout clean from consolidation shelf"},
-                {"rule": "Candle Strength (Rejection Wick)", "points": candle_pts, "max": 2, "passed": candle_pts >= 1, "detail": "Lower wick rejection on retest candle (buyers stepped in)" if candle_pts >= 1 else "Weak closing candle (selling pressure)"},
+                {"rule": "Key S/R Interaction", "points": 3 if not is_below_day_open else 1, "max": 3, "passed": not is_below_day_open, "detail": "Breakout clean from consolidation shelf" if not is_below_day_open else "Price collapsed below opening range"},
+                {"rule": "Candle Strength (Rejection Wick)", "points": candle_pts, "max": 2, "passed": candle_pts >= 1, "detail": "Lower wick rejection on retest candle (buyers stepped in)" if candle_pts >= 1 else "Weak closing candle (selling pressure / red bar)"},
             ]
             total_score = sum(c["points"] for c in checklist)
 
             # Strict Institutional Tier Assignment:
-            if index_aligned and total_score >= 17 and rvol >= 1.60 and range_pos >= 0.60:
+            if is_below_day_open:
+                tier = "C"
+                verdict = f"C Setup (FILTERED): {symbol} trading below Day Open (Intraday Red Candle)."
+            elif index_aligned and total_score >= 17 and rvol >= 1.60 and range_pos >= 0.60:
                 tier = "A+"
                 verdict = f"A+ Prime Setup: Confirmed Breakout & Retest with strong S/R polarity flip and {rvol}x RVOL."
             elif index_aligned and total_score >= 14 and rvol >= 1.25 and range_pos >= 0.50:
@@ -174,29 +178,33 @@ class PriceActionEngine:
         else:  # is_sell
             structure = "LH_LL"
             pa_setup = "Support Breakdown & Retest Rejection"
-            breakdown_passed = (current_price < vwap) and (range_pos <= 0.40)
-            retest_passed = (current_price <= retest_level) and (current_price < vwap)
+            is_above_day_open = (day_open is not None and current_price > day_open)
+            breakdown_passed = (current_price < vwap) and (range_pos <= 0.40) and not is_above_day_open
+            retest_passed = (current_price <= retest_level) and (current_price < vwap) and not is_above_day_open
             vol_passed = rvol >= 1.4
-            candle_passed = (day_open is None or current_price <= day_open) and (rvol >= 1.4)
+            candle_passed = not is_above_day_open and (rvol >= 1.4)
 
-            structure_pts = 4 if bearish_ribbon else 0
-            breakdown_pts = 4 if breakdown_passed else (2 if range_pos <= 0.50 else 0)
-            retest_pts = 4 if retest_passed else 2
+            structure_pts = 4 if (bearish_ribbon and not is_above_day_open) else 0
+            breakdown_pts = 4 if breakdown_passed else (2 if (range_pos <= 0.50 and not is_above_day_open) else 0)
+            retest_pts = 4 if retest_passed else (2 if not is_above_day_open else 0)
             vol_pts = 3 if rvol >= 1.75 else (2 if rvol >= 1.4 else (1 if rvol >= 1.2 else 0))
-            candle_pts = 2 if candle_passed else (1 if (day_open is None or current_price <= day_open) else 0)
+            candle_pts = 2 if candle_passed else (1 if not is_above_day_open else 0)
 
             checklist = [
-                {"rule": "Market Structure (LH + LL sequence)", "points": structure_pts, "max": 4, "passed": bearish_ribbon, "detail": "Clear Lower Highs and Lower Lows on 5m and 15m" if bearish_ribbon else "EMA 9 > EMA 20 (Upward bounce opposes short)"},
-                {"rule": "Breakdown Quality (Full-body close)", "points": breakdown_pts, "max": 4, "passed": breakdown_passed, "detail": f"Decisive bearish close below VWAP ₹{vwap:.2f} (Near Day's Low)" if breakdown_passed else "Price floating mid-range without breakdown"},
+                {"rule": "Market Structure (LH + LL sequence)", "points": structure_pts, "max": 4, "passed": bearish_ribbon and not is_above_day_open, "detail": "Clear Lower Highs and Lower Lows on 5m and 15m" if (bearish_ribbon and not is_above_day_open) else "Trading above Day Open or EMA 9 > 20"},
+                {"rule": "Breakdown Quality (Full-body close)", "points": breakdown_pts, "max": 4, "passed": breakdown_passed, "detail": f"Decisive bearish close below VWAP ₹{vwap:.2f} (Near Day's Low)" if breakdown_passed else "Price floating mid-range or above open"},
                 {"rule": "Retest Confirmation (Resistance held)", "points": retest_pts, "max": 4, "passed": retest_passed, "detail": f"Weak bounce rejected at breakdown level ₹{retest_level:.2f}" if retest_passed else "Awaiting resistance retest confirmation"},
                 {"rule": "Volume Context (Breakdown Surge)", "points": vol_pts, "max": 3, "passed": vol_passed, "detail": f"{rvol}x aggressive selling volume" if vol_passed else f"Sub-par volume breakdown ({rvol}x < 1.4x)"},
-                {"rule": "Key S/R Interaction", "points": 3, "max": 3, "passed": True, "detail": "Confluence with declining VWAP slope"},
-                {"rule": "Candle Strength (Bearish Rejection)", "points": candle_pts, "max": 2, "passed": candle_pts >= 1, "detail": "Bearish candle close near session lows" if candle_pts >= 1 else "Bullish wick / buying absorption"},
+                {"rule": "Key S/R Interaction", "points": 3 if not is_above_day_open else 1, "max": 3, "passed": not is_above_day_open, "detail": "Confluence with declining VWAP slope" if not is_above_day_open else "Price floating above day open"},
+                {"rule": "Candle Strength (Bearish Rejection)", "points": candle_pts, "max": 2, "passed": candle_pts >= 1, "detail": "Bearish candle close near session lows" if candle_pts >= 1 else "Bullish wick / buying absorption / green bar"},
             ]
             total_score = sum(c["points"] for c in checklist)
 
             # Strict Institutional Tier Assignment:
-            if index_aligned and total_score >= 17 and rvol >= 1.60 and range_pos <= 0.40:
+            if is_above_day_open:
+                tier = "C"
+                verdict = f"C Short Setup (FILTERED): {symbol} trading above Day Open (Intraday Green Candle)."
+            elif index_aligned and total_score >= 17 and rvol >= 1.60 and range_pos <= 0.40:
                 tier = "A+"
                 verdict = f"A+ Prime Short Setup: Confirmed breakdown with strong rejection and {rvol}x RVOL."
             elif index_aligned and total_score >= 14 and rvol >= 1.25 and range_pos <= 0.45:

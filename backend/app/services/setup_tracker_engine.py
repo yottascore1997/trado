@@ -41,6 +41,9 @@ class SetupTrackerEngine:
         self.base_capital: float = 50000.0
         self.leverage: float = 2.0
         self.exposure_per_trade: float = 100000.0
+        self.max_daily_trades: int = 8
+        self.symbol_lock_enabled: bool = True
+        self.opening_guard_enabled: bool = True
 
         self.active_setups: List[Dict[str, Any]] = []
         self.closed_setups: List[Dict[str, Any]] = []
@@ -358,74 +361,102 @@ class SetupTrackerEngine:
                 self._execute_close(setup_id, reason, exit_price, current_time=now_ist)
 
             # -------------------------------------------------------------
-            # STEP 2: Auto-Enter New A+ and A Setups (Unlimited Capacity)
+            # STEP 2: Auto-Enter New A+ and A Setups (Guarded Institutional Execution)
             # -------------------------------------------------------------
             if top_setups and not is_square_off_time:
-                for setup in top_setups:
-                    sym = setup.get("symbol")
-                    if not sym:
-                        continue
+                # 1. Opening Volatility Settlement Guard (09:15 - 09:30 AM IST)
+                # Blocks fresh entries during the first 15 mins to avoid opening false wick whipsaws
+                is_opening_settlement = self.opening_guard_enabled and (now_ist.hour == 9 and now_ist.minute < 30)
 
-                    # Filter: Only A+ and A setups
-                    tier = setup.get("setup_tier", "B")
-                    signal = setup.get("signal")
-                    if tier not in ("A+", "A") or signal not in ("BUY", "SELL"):
-                        continue
+                if is_opening_settlement:
+                    logger.debug("Opening settlement guard active (09:15-09:30 AM). Holding off fresh entries.")
+                else:
+                    today_str = now_ist.strftime("%Y-%m-%d")
+                    today_closed_count = sum(1 for c in self.closed_setups if c.get("date") == today_str)
+                    today_active_count = len(self.active_setups)
+                    today_total = today_active_count + today_closed_count
 
-                    # Strict Anti-Chasing Filter: Never enter over-extended setups (>1.6% from open or >0.85% from VWAP)
-                    if setup.get("is_extended", False) or setup.get("entry_status") == "EXTENDED_MISSED":
-                        logger.debug(f"Skipping extended setup for {sym}: Price already over-extended.")
-                        continue
+                    for setup in top_setups:
+                        # 2. Daily Setup Cap: Prevent overtrading and excessive brokerage churn (Max 8 setups)
+                        if today_total >= self.max_daily_trades:
+                            logger.info(f"Daily setup cap reached ({today_total}/{self.max_daily_trades}). Skipping further entries.")
+                            break
 
-                    # Avoid duplicate active positions for the same symbol
-                    if any(p["symbol"] == sym for p in self.active_setups):
-                        continue
+                        sym = setup.get("symbol")
+                        if not sym:
+                            continue
 
-                    price = float(setup.get("price") or setup.get("entry_price", 0.0))
-                    if price <= 0:
-                        continue
+                        # 3. Symbol Lock Rule: Max 1 trade per symbol per calendar day
+                        # Prevents whipsaw churn (e.g. 5x ICICIBANK / 4x HDFCBANK)
+                        if self.symbol_lock_enabled:
+                            already_traded_today = any(p["symbol"] == sym for p in self.active_setups) or any(
+                                c["symbol"] == sym and (c.get("date") == today_str or c.get("entry_time", "").startswith(today_str))
+                                for c in self.closed_setups
+                            )
+                            if already_traded_today:
+                                logger.debug(f"Symbol lock active for {sym}: already traded today.")
+                                continue
+                        else:
+                            if any(p["symbol"] == sym for p in self.active_setups):
+                                continue
 
-                    sl = float(setup.get("stop_loss", price * 0.985 if signal == "BUY" else price * 1.015))
-                    target = float(setup.get("target_price", price * 1.03 if signal == "BUY" else price * 0.97))
+                        # Filter: Only A+ and A setups
+                        tier = setup.get("setup_tier", "B")
+                        signal = setup.get("signal")
+                        if tier not in ("A+", "A") or signal not in ("BUY", "SELL"):
+                            continue
 
-                    # 2x Leverage calculation on ₹50k capital
-                    qty, margin_req, total_exposure = self.calculate_position_sizing(price)
+                        # Strict Anti-Chasing Filter: Never enter over-extended setups (>1.6% from open or >0.85% from VWAP)
+                        if setup.get("is_extended", False) or setup.get("entry_status") == "EXTENDED_MISSED":
+                            logger.debug(f"Skipping extended setup for {sym}: Price already over-extended.")
+                            continue
 
-                    setup_entry = {
-                        "setup_id": f"SET-{uuid.uuid4().hex[:8].upper()}",
-                        "symbol": sym,
-                        "setup_tier": tier,  # "A+" or "A"
-                        "tier_label": "⭐ A+ Institutional" if tier == "A+" else "✨ A High Conviction",
-                        "setup_type": setup.get("setup_type") or setup.get("pattern") or "Algorithmic Setup",
-                        "side": signal,
-                        "quantity": qty,
-                        "entry_price": round(price, 2),
-                        "current_price": round(price, 2),
-                        "initial_stop_loss": round(sl, 2),
-                        "stop_loss": round(sl, 2),
-                        "target_price": round(target, 2),
-                        "highest_price": round(price, 2),
-                        "lowest_price": round(price, 2),
-                        "trailing_stage": "INITIAL",
-                        "trailing_description": f"Initial Stop Loss at ₹{round(sl, 2)}",
-                        "base_capital": self.base_capital,
-                        "leverage": self.leverage,
-                        "margin_required": margin_req,
-                        "total_exposure": total_exposure,
-                        "unrealized_pnl": 0.0,
-                        "pnl_pct": 0.0,
-                        "product_type": "MIS (2x)",
-                        "entry_time": now_ist.isoformat(),
-                        "last_updated": now_ist.isoformat(),
-                        "rvol": float(setup.get("rvol", 1.5)),
-                        "score": float(setup.get("score") or setup.get("ai_score") or 85.0),
-                    }
+                        price = float(setup.get("price") or setup.get("entry_price", 0.0))
+                        if price <= 0:
+                            continue
 
-                    self.active_setups.append(setup_entry)
-                    logger.info(
-                        f"⚡ [SETUP TRACKER] Entered {tier} {signal} on {sym} @ ₹{price:.2f} | "
-                        f"Qty: {qty} (Exp: ₹{total_exposure:,.0f}, Margin: ₹{margin_req:,.0f}) | SL: ₹{sl:.2f} -> Tgt: ₹{target:.2f}"
-                    )
+                        sl = float(setup.get("stop_loss", price * 0.985 if signal == "BUY" else price * 1.015))
+                        target = float(setup.get("target_price", price * 1.03 if signal == "BUY" else price * 0.97))
+
+                        # 2x Leverage calculation on ₹50k capital
+                        qty, margin_req, total_exposure = self.calculate_position_sizing(price)
+
+                        setup_entry = {
+                            "setup_id": f"SET-{uuid.uuid4().hex[:8].upper()}",
+                            "symbol": sym,
+                            "setup_tier": tier,  # "A+" or "A"
+                            "tier_label": "⭐ A+ Institutional" if tier == "A+" else "✨ A High Conviction",
+                            "setup_type": setup.get("setup_type") or setup.get("pattern") or "Algorithmic Setup",
+                            "side": signal,
+                            "quantity": qty,
+                            "entry_price": round(price, 2),
+                            "current_price": round(price, 2),
+                            "initial_stop_loss": round(sl, 2),
+                            "stop_loss": round(sl, 2),
+                            "target_price": round(target, 2),
+                            "highest_price": round(price, 2),
+                            "lowest_price": round(price, 2),
+                            "trailing_stage": "INITIAL",
+                            "trailing_description": f"Initial Stop Loss at ₹{round(sl, 2)}",
+                            "base_capital": self.base_capital,
+                            "leverage": self.leverage,
+                            "margin_required": margin_req,
+                            "total_exposure": total_exposure,
+                            "unrealized_pnl": 0.0,
+                            "pnl_pct": 0.0,
+                            "product_type": "MIS (2x)",
+                            "entry_time": now_ist.isoformat(),
+                            "last_updated": now_ist.isoformat(),
+                            "rvol": float(setup.get("rvol", 1.5)),
+                            "score": float(setup.get("score") or setup.get("ai_score") or 85.0),
+                        }
+
+                        self.active_setups.append(setup_entry)
+                        today_total += 1
+                        logger.info(
+                            f"⚡ [SETUP TRACKER] Entered {tier} {signal} on {sym} @ ₹{price:.2f} | "
+                            f"Qty: {qty} (Exp: ₹{total_exposure:,.0f}, Margin: ₹{margin_req:,.0f}) | SL: ₹{sl:.2f} -> Tgt: ₹{target:.2f}"
+                        )
 
             self._save_persisted_state()
 
@@ -437,7 +468,7 @@ class SetupTrackerEngine:
         current_time: Optional[datetime] = None,
     ) -> Optional[Dict[str, Any]]:
         """Executes exit for a setup trade and computes realistic charges & net PnL."""
-        now = current_time if current_time is not None else datetime.now(IST)
+        now = current_time if current_time is not None else (self.last_feed_time if self.last_feed_time is not None else datetime.now(IST))
 
         pos = None
         for i, p in enumerate(self.active_setups):
@@ -511,16 +542,31 @@ class SetupTrackerEngine:
         )
         return closed_item
 
-    def manual_close(self, setup_id: str) -> Optional[Dict[str, Any]]:
+    def manual_close(self, setup_id: str, current_time: Optional[datetime] = None) -> Optional[Dict[str, Any]]:
         """Allows manual closure from the dashboard."""
         with self._lock:
             for pos in self.active_setups:
                 if pos["setup_id"] == setup_id:
                     exit_px = pos.get("current_price", pos["entry_price"])
-                    closed = self._execute_close(setup_id, "MANUAL_CLOSE", exit_px)
+                    closed = self._execute_close(setup_id, "MANUAL_CLOSE", exit_px, current_time=current_time)
                     self._save_persisted_state()
                     return closed
         return None
+
+    def close_all(self) -> List[Dict[str, Any]]:
+        """Closes all currently active setup trades at their current price."""
+        closed_list = []
+        with self._lock:
+            active_ids = [p["setup_id"] for p in list(self.active_setups)]
+            for s_id in active_ids:
+                pos = next((p for p in self.active_setups if p["setup_id"] == s_id), None)
+                if pos:
+                    exit_px = pos.get("current_price", pos["entry_price"])
+                    res = self._execute_close(s_id, "MANUAL_CLOSE_ALL", exit_px)
+                    if res:
+                        closed_list.append(res)
+            self._save_persisted_state()
+        return closed_list
 
     def reset_tracker(self):
         """Clears all active and closed setup records."""
@@ -601,6 +647,14 @@ class SetupTrackerEngine:
                 "all_closed_history_count": len(self.closed_setups),
                 "top_sniper_picks": top_sniper_picks,
                 "sector_performance": sector_perf,
+                "safeguards": {
+                    "symbol_lock_enabled": self.symbol_lock_enabled,
+                    "opening_guard_enabled": self.opening_guard_enabled,
+                    "is_opening_settlement_active": bool(now.hour == 9 and now.minute < 30),
+                    "max_daily_trades": self.max_daily_trades,
+                    "today_trades_count": total_setups_today,
+                    "remaining_setups_quota": max(0, self.max_daily_trades - total_setups_today),
+                },
             }
 
 

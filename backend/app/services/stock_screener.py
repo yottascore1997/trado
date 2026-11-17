@@ -805,23 +805,28 @@ class StockScreenerService:
             n_low = float(n_ohlc.get("low", n_ltp))
             n_change = float(nifty_quote.get("net_change") or round(n_ltp - n_open, 2))
             n_pct = round((n_change / max(n_open, 1.0)) * 100, 2)
+            n_session_change = round(n_ltp - n_open, 2)
+            n_session_pct = round((n_session_change / max(n_open, 1.0)) * 100, 2)
             n_vwap = round((n_open + n_high + n_low + n_ltp) / 4.0, 1) if n_open > 0 else n_ltp
             n_range_pct = round(((n_high - n_low) / max(n_open, 1.0)) * 100, 2)
             n_vwap_dist = round(((n_ltp - n_vwap) / max(n_vwap, 1.0)) * 100, 2)
 
             # Quantitative Regime Filter for Benchmark:
-            # Compression Check: Range < 0.35% AND Price oscillating near flat VWAP (<0.12%) -> SIDEWAYS_CHOP
+            # 1. SIDEWAYS CHOP: Range < 0.35% AND Price oscillating near flat VWAP (<0.12%)
             if n_range_pct < 0.35 and abs(n_vwap_dist) < 0.12:
                 n_regime = "SIDEWAYS_CHOP"
                 n_trend = "NEUTRAL"
                 n_signal = "NO_TRADE"
                 n_score = 60
-            elif n_change > 0 and n_range_pct >= 0.28 and n_vwap_dist > 0.06:
+            # 2. TRENDING BULLISH: MUST be trading >= Today's Open AND >= VWAP (+0.06%)
+            # Prevents morning gap-up selloffs from being falsely labeled bullish
+            elif n_ltp >= n_open and n_session_change >= 0 and n_range_pct >= 0.25 and n_vwap_dist > 0.06:
                 n_regime = "TRENDING_BULLISH"
                 n_trend = "BULLISH"
                 n_signal = "BUY"
                 n_score = min(95, int(75 + abs(n_pct) * 8))
-            elif n_change < 0 and n_range_pct >= 0.28 and n_vwap_dist < -0.06:
+            # 3. TRENDING BEARISH: Either net negative vs yesterday OR (below today's open + below VWAP - gap fade selloff)
+            elif (n_change < 0 or (n_ltp < n_open and n_session_change < 0)) and n_range_pct >= 0.25 and n_vwap_dist < -0.06:
                 n_regime = "TRENDING_BEARISH"
                 n_trend = "BEARISH"
                 n_signal = "SELL"
@@ -857,6 +862,8 @@ class StockScreenerService:
             b_low = float(b_ohlc.get("low", b_ltp))
             b_change = float(bn_quote.get("net_change") or round(b_ltp - b_open, 2))
             b_pct = round((b_change / max(b_open, 1.0)) * 100, 2)
+            b_session_change = round(b_ltp - b_open, 2)
+            b_session_pct = round((b_session_change / max(b_open, 1.0)) * 100, 2)
             b_vwap = round((b_open + b_high + b_low + b_ltp) / 4.0, 1) if b_open > 0 else b_ltp
             b_range_pct = round(((b_high - b_low) / max(b_open, 1.0)) * 100, 2)
             b_vwap_dist = round(((b_ltp - b_vwap) / max(b_vwap, 1.0)) * 100, 2)
@@ -866,12 +873,12 @@ class StockScreenerService:
                 b_trend = "NEUTRAL"
                 b_signal = "NO_TRADE"
                 b_score = 60
-            elif b_change > 0 and b_range_pct >= 0.30 and b_vwap_dist > 0.08:
+            elif b_ltp >= b_open and b_session_change >= 0 and b_range_pct >= 0.25 and b_vwap_dist > 0.08:
                 b_regime = "TRENDING_BULLISH"
                 b_trend = "BULLISH"
                 b_signal = "BUY"
                 b_score = min(95, int(72 + abs(b_pct) * 8))
-            elif b_change < 0 and b_range_pct >= 0.30 and b_vwap_dist < -0.08:
+            elif (b_change < 0 or (b_ltp < b_open and b_session_change < 0)) and b_range_pct >= 0.25 and b_vwap_dist < -0.08:
                 b_regime = "TRENDING_BEARISH"
                 b_trend = "BEARISH"
                 b_signal = "SELL"
@@ -1019,10 +1026,10 @@ class StockScreenerService:
             prod_type = "MIS"
         live_quotes = self.fetch_live_quotes()
         indices = self.get_indices_status(live_data=live_quotes)
-        nifty_status = indices[0]  # NIFTY 50 is master benchmark
+        nifty_status = indices[0] if indices else {"price": 0.0, "change_pct": 0.0, "trend": "NEUTRAL", "regime": "SIDEWAYS_CHOP"}
         n_ltp = nifty_status["price"]
         nifty_change_pct = float(nifty_status.get("change_pct", 0.0))
-        bn_ltp = indices[1]["price"]
+        bn_ltp = indices[1]["price"] if len(indices) > 1 else n_ltp
 
         # Session Time calculation for Time-of-Day Normalized RVOL
         IST_TZ = timezone(timedelta(hours=5, minutes=30))
@@ -1073,13 +1080,42 @@ class StockScreenerService:
                         "vwap_ratio": round(vwap_ratio, 2),
                     }
 
+        # Quantitative Market Breadth Calculation across the liquid NSE universe
+        # Evaluates % of stocks trading Above vs Below Today's Session Open
+        total_active_universe = 0
+        stocks_above_open = 0
+        stocks_below_open = 0
+        if live_quotes:
+            for sym_k, q_item in live_quotes.items():
+                if ("NSE_EQ:" in sym_k or "NSE_EQ|" in sym_k) and "last_price" in q_item:
+                    curr_p = float(q_item["last_price"])
+                    op_p = float(q_item.get("ohlc", {}).get("open", curr_p))
+                    if op_p > 0:
+                        total_active_universe += 1
+                        if curr_p >= op_p:
+                            stocks_above_open += 1
+                        else:
+                            stocks_below_open += 1
+
+        breadth_green_pct = round((stocks_above_open / max(total_active_universe, 1)) * 100, 1)
+        is_broad_market_selling = (total_active_universe >= 10) and (breadth_green_pct < 40.0)
+        is_broad_market_rally = (total_active_universe >= 10) and (breadth_green_pct > 65.0)
+
         screened_stocks = []
 
         for item in self.STOCKS_UNIVERSE:
             sym = item["symbol"]
             base_p = item["base_price"]
+            isin_key = self.UPSTOX_EQUITY_KEYS.get(sym)
 
-            quote = live_quotes.get(f"NSE_EQ:{sym}") if live_quotes else None
+            quote = None
+            if live_quotes:
+                quote = (
+                    live_quotes.get(f"NSE_EQ:{sym}")
+                    or live_quotes.get(f"NSE_EQ|{sym}")
+                    or (live_quotes.get(isin_key) if isin_key else None)
+                    or live_quotes.get(sym)
+                )
             is_upstox_live = False
 
             if quote and "last_price" in quote:
@@ -1092,6 +1128,10 @@ class StockScreenerService:
                 close_p = float(ohlc.get("close", price))
                 net_change = float(quote.get("net_change") or round(price - open_p, 2))
                 change_pct = round((net_change / max(open_p, 1.0)) * 100, 2)
+                # Intraday Session Change (True performance relative to Today's Open)
+                session_change = round(price - open_p, 2)
+                session_change_pct = round((session_change / max(open_p, 1.0)) * 100, 2)
+
                 # Real exchange VWAP from Upstox (average_price) if available, fallback to typical price
                 vwap = float(quote.get("average_price") or quote.get("vwap") or round((open_p + high_p + low_p + price) / 4.0, 2))
                 day_range = max(high_p - low_p, price * 0.008)
@@ -1121,8 +1161,29 @@ class StockScreenerService:
                 range_span = max(high_p - low_p, price * 0.005)
                 range_pos = round((price - low_p) / range_span, 2) if range_span > 0 else 0.50
 
-                is_bullish_expansion = (change_pct >= 0) and (price >= (vwap + vwap_entry_buffer)) and (range_pos >= 0.55 or is_orb_breakout) and (ema_9 >= ema_20)
-                is_bearish_expansion = (change_pct < 0) and (price <= (vwap - vwap_entry_buffer)) and (range_pos <= 0.45 or is_orb_breakdown) and (ema_9 <= ema_20)
+                # 5. Gap-Fade Bearish Trap Detection:
+                # Stock opened higher than yesterday's close (gap up), but is currently trading BELOW today's open!
+                is_gap_fade_trap = (open_p > close_p) and (price < open_p)
+
+                # 6. Strict Intraday Session Green / Red Rules:
+                # - BUY requires stock to be trading AT OR ABOVE today's Open (session_change >= 0)
+                # - SELL requires stock to be trading AT OR BELOW today's Open (session_change <= 0)
+                is_session_green = (price >= open_p) and (session_change >= 0)
+                is_session_red = (price <= open_p) and (session_change <= 0)
+
+                is_bullish_expansion = (
+                    is_session_green
+                    and not is_gap_fade_trap
+                    and (price >= (vwap + vwap_entry_buffer))
+                    and (range_pos >= 0.55 or is_orb_breakout)
+                    and (ema_9 >= ema_20)
+                )
+                is_bearish_expansion = (
+                    is_session_red
+                    and (price <= (vwap - vwap_entry_buffer))
+                    and (range_pos <= 0.45 or is_orb_breakdown)
+                    and (ema_9 <= ema_20)
+                )
 
                 if is_bullish_expansion:
                     signal = "BUY"
@@ -1227,6 +1288,16 @@ class StockScreenerService:
                 signal = "NO_TRADE"
                 setup_type = "Filtered: NIFTY in Sideways Chop"
                 ai_score = min(ai_score, 50)
+            elif is_broad_market_selling and signal == "BUY" and not is_alpha_breakout:
+                # Broad market liquidation: >60% of universe is trading below open
+                signal = "NO_TRADE"
+                setup_type = f"Blocked: Broad Market Liquidation ({breadth_green_pct}% Universe Green)"
+                ai_score = min(ai_score, 45)
+            elif is_gap_fade_trap and signal == "BUY":
+                # Stock opened higher than yesterday's close, but is failing below today's open
+                signal = "NO_TRADE"
+                setup_type = "Blocked: Gap-Up Fade Trap (Price Below Day Open)"
+                ai_score = min(ai_score, 40)
             elif is_extended and signal in ("BUY", "SELL"):
                 # Stock is over-extended (>1.6% from open or >0.85% from VWAP), high risk of pullback trap
                 setup_type = f"Extended ({open_distance_pct:.1f}% from Open, {vwap_dist_pct:.2f}% from VWAP) - Wait for Retest"
@@ -1269,6 +1340,8 @@ class StockScreenerService:
                 {"rule": "Market Regime Filter (Trending Confirmed)", "passed": not is_nifty_choppy and nifty_status.get("trend") in ("BULLISH", "BEARISH")},
                 {"rule": "Trend Confirmation (5m & 15m)", "passed": trend_5m == "BULLISH" and trend_15m == "BULLISH" if signal == "BUY" else trend_5m == "BEARISH"},
                 {"rule": "VWAP Anchor (Price > VWAP for BUY)", "passed": price > vwap if signal == "BUY" else price < vwap},
+                {"rule": "Day Open Rule (Price > Open for BUY)", "passed": price >= open_p if signal == "BUY" else price <= open_p},
+                {"rule": "Gap-Fade Protection", "passed": not is_gap_fade_trap},
                 {"rule": "EMA 9 > EMA 20 Alignment", "passed": ema_9 > ema_20 if signal == "BUY" else ema_9 < ema_20},
                 {"rule": f"Volume Participation (Time-Normalized RVOL ≥ 1.5x: {rvol}x)", "passed": rvol >= 1.5},
                 {"rule": "Opening Range Breakout (ORB Buffer)", "passed": breakout},

@@ -11,7 +11,8 @@ import {
   Cpu, 
   TrendingUp, 
   Settings, 
-  FileText 
+  FileText,
+  Target, 
 } from "lucide-react";
 
 interface NavbarProps {
@@ -29,15 +30,18 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const navItems = [
     { id: "dashboard", label: "Dashboard", icon: Activity },
+    { id: "today_trades", label: "Today Trades", icon: Target },
+    { id: "paper", label: "Paper Trading", icon: ShieldAlert },
+    /*
     { id: "markets", label: "Markets", icon: TrendingUp },
     { id: "signals", label: "Signals", icon: ZapIcon },
     { id: "charts", label: "Charts", icon: BarChart2 },
     { id: "backtest", label: "Backtest", icon: Layers },
-    { id: "paper", label: "Paper Trading", icon: ShieldAlert },
     { id: "performance", label: "Performance", icon: FileText },
     { id: "aimodel", label: "AI Model", icon: Cpu },
     { id: "risk", label: "Risk", icon: Sliders },
     { id: "settings", label: "Settings", icon: Settings },
+    */
   ];
 
   return (

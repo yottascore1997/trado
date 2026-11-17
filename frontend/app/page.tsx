@@ -15,6 +15,7 @@ import { CSVImportModal } from "@/components/CSVImportModal";
 import { SystemStatusBar } from "@/components/SystemStatusBar";
 import { TradingPlanController, TradingPlanData } from "@/components/TradingPlanController";
 import { PaperTradingDashboard } from "@/components/PaperTradingDashboard";
+import { TodayTradesDashboard } from "@/components/TodayTradesDashboard";
 import {
   Activity,
   ShieldCheck,
@@ -758,6 +759,13 @@ export default function DashboardPage() {
                 );
               })()}
             </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* TAB: TODAY TRADES & LIVE ALL-OPPORTUNITY SETUP TRACKER    */}
+          {/* ========================================================= */}
+          {activeTab === "today_trades" && (
+            <TodayTradesDashboard />
           )}
 
           {/* ========================================================= */}
