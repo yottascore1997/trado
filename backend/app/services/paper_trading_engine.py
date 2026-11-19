@@ -626,6 +626,18 @@ class PaperTradingEngine:
                     logger.info(f"🚫 [REAL-TIME NIFTY GUARD] {sym}: Blocked Short SELL because NIFTY 50 (₹{n_ltp}) is above VWAP (₹{n_vwap}).")
                     continue
 
+            # Strict Anti-Chasing & Retest Sweet-Spot Filter:
+            # Only auto-enter setups that are in sweet-spot READY_NOW status (not WAIT_FOR_DIP or EXTENDED_MISSED).
+            entry_status = setup.get("entry_status")
+            if entry_status in ("WAIT_FOR_DIP", "EXTENDED_MISSED", "NO_TRADE") or setup.get("is_extended", False):
+                logger.info(f"🚫 [SWEET-SPOT RETEST GUARD] {sym}: Awaiting retest/dip (entry_status={entry_status}).")
+                continue
+
+            # Candle Wick Trap Guard: Never enter if upper rejection wick (BUY) or lower absorption wick (SELL)
+            if setup.get("is_upper_rejection_trap") or setup.get("is_lower_absorption_trap"):
+                logger.info(f"🚫 [CANDLE WICK TRAP GUARD] {sym}: Rejection wick trap detected. Entry blocked.")
+                continue
+
             price = float(setup.get("price") or setup.get("entry_price", 0.0))
             if price <= 0:
                 continue

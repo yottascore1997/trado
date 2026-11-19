@@ -1165,7 +1165,22 @@ class StockScreenerService:
                 # Stock opened higher than yesterday's close (gap up), but is currently trading BELOW today's open!
                 is_gap_fade_trap = (open_p > close_p) and (price < open_p)
 
-                # 6. Strict Intraday Session Green / Red Rules:
+                # 6. Candle Wick & Absorption Analysis (Filters Institutional Traps & Exhaustion)
+                candle_span = max(high_p - low_p, price * 0.002, 0.05)
+                real_body_top = max(open_p, price)
+                real_body_bottom = min(open_p, price)
+                upper_wick = max(0.0, high_p - real_body_top)
+                lower_wick = max(0.0, real_body_bottom - low_p)
+                upper_wick_ratio = round(upper_wick / candle_span, 3)
+                lower_wick_ratio = round(lower_wick / candle_span, 3)
+
+                # Institutional Exhaustion & Absorption Flags:
+                # Upper wick > 35% indicates sellers dumping/rejecting price into highs (Inverted Hammer / Shooting Star)
+                # Lower wick > 35% indicates buyers absorbing selling at lows (Hammer / Pinbar)
+                is_upper_rejection_trap = upper_wick_ratio > 0.35
+                is_lower_absorption_trap = lower_wick_ratio > 0.35
+
+                # 7. Strict Intraday Session Green / Red Rules:
                 # - BUY requires stock to be trading AT OR ABOVE today's Open (session_change >= 0)
                 # - SELL requires stock to be trading AT OR BELOW today's Open (session_change <= 0)
                 is_session_green = (price >= open_p) and (session_change >= 0)
@@ -1174,12 +1189,14 @@ class StockScreenerService:
                 is_bullish_expansion = (
                     is_session_green
                     and not is_gap_fade_trap
+                    and not is_upper_rejection_trap
                     and (price >= (vwap + vwap_entry_buffer))
                     and (range_pos >= 0.55 or is_orb_breakout)
                     and (ema_9 >= ema_20)
                 )
                 is_bearish_expansion = (
                     is_session_red
+                    and not is_lower_absorption_trap
                     and (price <= (vwap - vwap_entry_buffer))
                     and (range_pos <= 0.45 or is_orb_breakdown)
                     and (ema_9 <= ema_20)
@@ -1209,6 +1226,28 @@ class StockScreenerService:
                     target = round(price - reward_pts, 2)
                     setup_type = "Upstox Live VWAP Breakdown & Rejection"
                     ai_score = min(95, int(76 + abs(change_pct) * 4 + (rvol - 1.0) * 6))
+                elif is_upper_rejection_trap and (price >= (vwap + vwap_entry_buffer)) and is_session_green:
+                    signal = "NO_TRADE"
+                    trend_5m = "SIDEWAYS"
+                    trend_15m = "SIDEWAYS"
+                    breakout = False
+                    risk_pts = round(atr * 0.5, 2)
+                    reward_pts = round(risk_pts * 1.5, 2)
+                    stop_loss = round(price - risk_pts, 2)
+                    target = round(price + reward_pts, 2)
+                    setup_type = f"Blocked: Upper Rejection Wick ({int(upper_wick_ratio*100)}% of candle)"
+                    ai_score = 45
+                elif is_lower_absorption_trap and (price <= (vwap - vwap_entry_buffer)) and is_session_red:
+                    signal = "NO_TRADE"
+                    trend_5m = "SIDEWAYS"
+                    trend_15m = "SIDEWAYS"
+                    breakout = False
+                    risk_pts = round(atr * 0.5, 2)
+                    reward_pts = round(risk_pts * 1.5, 2)
+                    stop_loss = round(price + risk_pts, 2)
+                    target = round(price - reward_pts, 2)
+                    setup_type = f"Blocked: Lower Absorption Wick ({int(lower_wick_ratio*100)}% of candle)"
+                    ai_score = 45
                 else:
                     signal = "NO_TRADE"
                     trend_5m = "SIDEWAYS"
@@ -1268,9 +1307,12 @@ class StockScreenerService:
                 if is_extended:
                     entry_status = "EXTENDED_MISSED"
                     entry_badge = "🔴 OVER-EXTENDED (DO NOT CHASE)"
-                elif vwap_dist_pct <= 0.40 and rvol >= 1.35:
+                elif (signal == "BUY" and is_upper_rejection_trap) or (signal == "SELL" and is_lower_absorption_trap):
+                    entry_status = "WAIT_FOR_DIP"
+                    entry_badge = "🟡 REJECTION WICK (WAIT FOR RETEST)"
+                elif vwap_dist_pct <= 0.35 and rvol >= 1.35:
                     entry_status = "READY_NOW"
-                    entry_badge = "🟢 FRESH ENTRY READY"
+                    entry_badge = "🟢 FRESH RETEST ENTRY READY"
                 else:
                     entry_status = "WAIT_FOR_DIP"
                     entry_badge = "🟡 WAIT FOR RETEST / DIP"
@@ -1342,6 +1384,8 @@ class StockScreenerService:
                 {"rule": "VWAP Anchor (Price > VWAP for BUY)", "passed": price > vwap if signal == "BUY" else price < vwap},
                 {"rule": "Day Open Rule (Price > Open for BUY)", "passed": price >= open_p if signal == "BUY" else price <= open_p},
                 {"rule": "Gap-Fade Protection", "passed": not is_gap_fade_trap},
+                {"rule": f"Candle Wick Trap Guard ({int(upper_wick_ratio*100)}% <= 35%)", "passed": not is_upper_rejection_trap if signal == "BUY" else not is_lower_absorption_trap},
+                {"rule": f"Retest Sweet-Spot Distance ({vwap_dist_pct:.2f}% <= 0.35%)", "passed": vwap_dist_pct <= 0.35},
                 {"rule": "EMA 9 > EMA 20 Alignment", "passed": ema_9 > ema_20 if signal == "BUY" else ema_9 < ema_20},
                 {"rule": f"Volume Participation (Time-Normalized RVOL ≥ 1.5x: {rvol}x)", "passed": rvol >= 1.5},
                 {"rule": "Opening Range Breakout (ORB Buffer)", "passed": breakout},
@@ -1368,6 +1412,8 @@ class StockScreenerService:
                 day_open=open_p,
                 ema_9=ema_9,
                 ema_20=ema_20,
+                upper_wick_ratio=upper_wick_ratio,
+                lower_wick_ratio=lower_wick_ratio,
             )
 
             # 5. Multi-Factor Composite Trade Ranking (0 to 100 Prop-Desk Quality Model)
@@ -1475,6 +1521,10 @@ class StockScreenerService:
                 "open_distance_pct": open_distance_pct,
                 "vwap_dist_pct": vwap_dist_pct,
                 "is_extended": is_extended,
+                "upper_wick_ratio": upper_wick_ratio,
+                "lower_wick_ratio": lower_wick_ratio,
+                "is_upper_rejection_trap": is_upper_rejection_trap,
+                "is_lower_absorption_trap": is_lower_absorption_trap,
             }
             screened_stocks.append(stock_entry)
 
@@ -1482,12 +1532,23 @@ class StockScreenerService:
         screened_stocks.sort(key=lambda x: x.get("composite_rank_score", x["ai_score"]), reverse=True)
 
         # Top Setups are high-conviction BUY or SELL with Tier A+ or A (AI Score >= 75)
+        # Excludes stocks with opposing rejection wicks and prioritizes sweet-spot READY_NOW setups
         candidates = [
             s for s in screened_stocks 
-            if s["signal"] in ("BUY", "SELL") and s["ai_score"] >= 75 and s.get("setup_tier") in ("A+", "A")
+            if s["signal"] in ("BUY", "SELL")
+            and s["ai_score"] >= 75
+            and s.get("setup_tier") in ("A+", "A")
+            and not s.get("is_upper_rejection_trap", False)
+            and not s.get("is_lower_absorption_trap", False)
         ]
-        # Prioritize eligible stocks by composite rank score
-        candidates.sort(key=lambda x: x.get("composite_rank_score", x["ai_score"]), reverse=True)
+        # Prioritize READY_NOW sweet-spot entries first, then by composite rank score
+        candidates.sort(
+            key=lambda x: (
+                1 if x.get("entry_status") == "READY_NOW" else 0,
+                x.get("composite_rank_score", x["ai_score"]),
+            ),
+            reverse=True,
+        )
         top_setups = [s for s in candidates if s.get("is_eligible", True)][:5]
         if len(top_setups) < 5:
             remaining = [s for s in candidates if not s.get("is_eligible", True)]

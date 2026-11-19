@@ -406,9 +406,17 @@ class SetupTrackerEngine:
                         if tier not in ("A+", "A") or signal not in ("BUY", "SELL"):
                             continue
 
-                        # Strict Anti-Chasing Filter: Never enter over-extended setups (>1.6% from open or >0.85% from VWAP)
-                        if setup.get("is_extended", False) or setup.get("entry_status") == "EXTENDED_MISSED":
-                            logger.debug(f"Skipping extended setup for {sym}: Price already over-extended.")
+                        # Strict Anti-Chasing & Retest Sweet-Spot Filter:
+                        # Only enter if in sweet spot (READY_NOW) or entry_status not specified (test fixtures)
+                        # Never enter setups awaiting dip/retest (WAIT_FOR_DIP) or over-extended setups (EXTENDED_MISSED)
+                        entry_status = setup.get("entry_status")
+                        if entry_status in ("WAIT_FOR_DIP", "EXTENDED_MISSED", "NO_TRADE") or setup.get("is_extended", False):
+                            logger.debug(f"Skipping setup for {sym}: Not in sweet-spot zone (entry_status={entry_status}).")
+                            continue
+
+                        # Candle Wick Trap Guard: Never enter if upper rejection wick (BUY) or lower absorption wick (SELL)
+                        if setup.get("is_upper_rejection_trap") or setup.get("is_lower_absorption_trap"):
+                            logger.debug(f"Skipping setup for {sym}: Rejection wick trap detected.")
                             continue
 
                         price = float(setup.get("price") or setup.get("entry_price", 0.0))

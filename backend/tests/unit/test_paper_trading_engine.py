@@ -559,5 +559,66 @@ def test_counter_trend_blocked_from_auto_entry():
     assert len(engine.open_positions) == 0
 
 
+def test_retest_dip_and_wick_trap_blocked_from_auto_entry():
+    """Validates that WAIT_FOR_DIP setups and rejection wick traps are strictly blocked from auto-entry."""
+    engine = PaperTradingEngine(initial_budget=50000.0, persist=False)
+    mock_setups = [
+        {
+            "symbol": "INDUSINDBK",
+            "signal": "BUY",
+            "price": 920.20,
+            "entry_price": 920.20,
+            "stop_loss": 910.0,
+            "target_price": 940.0,
+            "setup_tier": "A",
+            "alignment_status": "ALIGNED_BULLISH",
+            "index_aligned": True,
+            "entry_status": "WAIT_FOR_DIP",  # Awaiting retest
+            "is_upper_rejection_trap": True,  # Heavy upper selling wick
+        },
+        {
+            "symbol": "VEDL",
+            "signal": "SELL",
+            "price": 241.15,
+            "entry_price": 241.15,
+            "stop_loss": 244.0,
+            "target_price": 236.0,
+            "setup_tier": "A",
+            "alignment_status": "ALIGNED_BEARISH",
+            "index_aligned": True,
+            "entry_status": "READY_NOW",
+            "is_lower_absorption_trap": True,  # Lower wick absorption trap
+        },
+        {
+            "symbol": "TCS",
+            "signal": "BUY",
+            "price": 3500.0,
+            "entry_price": 3500.0,
+            "stop_loss": 3465.0,
+            "target_price": 3570.0,
+            "setup_tier": "A+",
+            "alignment_status": "ALIGNED_BULLISH",
+            "index_aligned": True,
+            "entry_status": "READY_NOW",  # Sweet-spot consolidation
+            "is_upper_rejection_trap": False,
+        },
+    ]
+    market_time = datetime(2026, 9, 23, 10, 30, tzinfo=timezone(timedelta(hours=5, minutes=30)))
+    live_quotes = {
+        "NSE_INDEX:Nifty 50": {"last_price": 24100.0, "ohlc": {"open": 24050.0, "high": 24120.0, "low": 24040.0, "close": 24000.0}},
+        "NSE_EQ:INDUSINDBK": {"last_price": 920.20},
+        "NSE_EQ:VEDL": {"last_price": 241.15},
+        "NSE_EQ:TCS": {"last_price": 3500.0},
+    }
+    engine.process_market_tick(
+        live_quotes,
+        top_setups=mock_setups,
+        current_time=market_time,
+    )
+    # Only TCS should enter! INDUSINDBK (WAIT_FOR_DIP/upper wick) and VEDL (lower absorption) must be blocked!
+    assert len(engine.open_positions) == 1
+    assert engine.open_positions[0]["symbol"] == "TCS"
+
+
 
 
