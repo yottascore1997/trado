@@ -812,21 +812,22 @@ class StockScreenerService:
             n_vwap_dist = round(((n_ltp - n_vwap) / max(n_vwap, 1.0)) * 100, 2)
 
             # Quantitative Regime Filter for Benchmark:
-            # 1. SIDEWAYS CHOP: Range < 0.35% AND Price oscillating near flat VWAP (<0.12%)
-            if n_range_pct < 0.35 and abs(n_vwap_dist) < 0.12:
+            # 1. SIDEWAYS CHOP: Narrow range (<0.40%) OR Price oscillating near flat VWAP (<0.12%)
+            # On NIFTY, 0.40% is ~95-100 pts. Below this, there is no intraday market impulse.
+            if n_range_pct < 0.40 and abs(n_vwap_dist) < 0.12:
                 n_regime = "SIDEWAYS_CHOP"
                 n_trend = "NEUTRAL"
                 n_signal = "NO_TRADE"
                 n_score = 60
-            # 2. TRENDING BULLISH: MUST be trading >= Today's Open AND >= VWAP (+0.06%)
-            # Prevents morning gap-up selloffs from being falsely labeled bullish
-            elif n_ltp >= n_open and n_session_change >= 0 and n_range_pct >= 0.25 and n_vwap_dist > 0.06:
+            # 2. TRENDING BULLISH: MUST be trading >= Today's Open AND >= VWAP (+0.12%) with healthy range expansion
+            # Prevents morning gap-up selloffs and low-volatility dead chop from being falsely labeled bullish
+            elif n_ltp >= n_open and n_session_change >= 0 and n_range_pct >= 0.40 and n_vwap_dist >= 0.12:
                 n_regime = "TRENDING_BULLISH"
                 n_trend = "BULLISH"
                 n_signal = "BUY"
                 n_score = min(95, int(75 + abs(n_pct) * 8))
             # 3. TRENDING BEARISH: Either net negative vs yesterday OR (below today's open + below VWAP - gap fade selloff)
-            elif (n_change < 0 or (n_ltp < n_open and n_session_change < 0)) and n_range_pct >= 0.25 and n_vwap_dist < -0.06:
+            elif (n_change < 0 or (n_ltp < n_open and n_session_change < 0)) and n_range_pct >= 0.40 and n_vwap_dist <= -0.12:
                 n_regime = "TRENDING_BEARISH"
                 n_trend = "BEARISH"
                 n_signal = "SELL"
@@ -868,17 +869,17 @@ class StockScreenerService:
             b_range_pct = round(((b_high - b_low) / max(b_open, 1.0)) * 100, 2)
             b_vwap_dist = round(((b_ltp - b_vwap) / max(b_vwap, 1.0)) * 100, 2)
 
-            if b_range_pct < 0.40 and abs(b_vwap_dist) < 0.15:
+            if b_range_pct < 0.45 and abs(b_vwap_dist) < 0.15:
                 b_regime = "SIDEWAYS_CHOP"
                 b_trend = "NEUTRAL"
                 b_signal = "NO_TRADE"
                 b_score = 60
-            elif b_ltp >= b_open and b_session_change >= 0 and b_range_pct >= 0.25 and b_vwap_dist > 0.08:
+            elif b_ltp >= b_open and b_session_change >= 0 and b_range_pct >= 0.45 and b_vwap_dist >= 0.15:
                 b_regime = "TRENDING_BULLISH"
                 b_trend = "BULLISH"
                 b_signal = "BUY"
                 b_score = min(95, int(72 + abs(b_pct) * 8))
-            elif (b_change < 0 or (b_ltp < b_open and b_session_change < 0)) and b_range_pct >= 0.25 and b_vwap_dist < -0.08:
+            elif (b_change < 0 or (b_ltp < b_open and b_session_change < 0)) and b_range_pct >= 0.45 and b_vwap_dist <= -0.15:
                 b_regime = "TRENDING_BEARISH"
                 b_trend = "BEARISH"
                 b_signal = "SELL"
@@ -1186,8 +1187,13 @@ class StockScreenerService:
                 is_session_green = (price >= open_p) and (session_change >= 0)
                 is_session_red = (price <= open_p) and (session_change <= 0)
 
+                # 7b. Intraday Momentum Range Expansion Guard (Filters Sleepy Stocks like LICI)
+                stock_range_pct = round(((high_p - low_p) / max(open_p, 1.0)) * 100, 2)
+                is_active_volatility = (stock_range_pct >= 0.70) or ((high_p - low_p) >= (atr * 0.60))
+
                 is_bullish_expansion = (
                     is_session_green
+                    and is_active_volatility
                     and not is_gap_fade_trap
                     and not is_upper_rejection_trap
                     and (price >= (vwap + vwap_entry_buffer))
@@ -1196,6 +1202,7 @@ class StockScreenerService:
                 )
                 is_bearish_expansion = (
                     is_session_red
+                    and is_active_volatility
                     and not is_lower_absorption_trap
                     and (price <= (vwap - vwap_entry_buffer))
                     and (range_pos <= 0.45 or is_orb_breakdown)
@@ -1226,6 +1233,17 @@ class StockScreenerService:
                     target = round(price - reward_pts, 2)
                     setup_type = "Upstox Live VWAP Breakdown & Rejection"
                     ai_score = min(95, int(76 + abs(change_pct) * 4 + (rvol - 1.0) * 6))
+                elif not is_active_volatility:
+                    signal = "NO_TRADE"
+                    trend_5m = "SIDEWAYS"
+                    trend_15m = "SIDEWAYS"
+                    breakout = False
+                    risk_pts = round(atr * 0.5, 2)
+                    reward_pts = round(risk_pts * 1.5, 2)
+                    stop_loss = round(price - risk_pts, 2)
+                    target = round(price + reward_pts, 2)
+                    setup_type = f"Filtered: Low Intraday Volatility ({stock_range_pct:.2f}% range < 0.70%)"
+                    ai_score = 45
                 elif is_upper_rejection_trap and (price >= (vwap + vwap_entry_buffer)) and is_session_green:
                     signal = "NO_TRADE"
                     trend_5m = "SIDEWAYS"
@@ -1303,14 +1321,17 @@ class StockScreenerService:
                 rs_status = "IN_LINE"
 
             # 6. Actionable Entry Status (Traffic Light Protocol: 🟢 READY, 🟡 DIP, 🔴 MISSED)
-            if signal in ("BUY", "SELL") and not sector_blocked:
+            if signal in ("BUY", "SELL") and not sector_blocked and is_active_volatility:
                 if is_extended:
                     entry_status = "EXTENDED_MISSED"
                     entry_badge = "🔴 OVER-EXTENDED (DO NOT CHASE)"
                 elif (signal == "BUY" and is_upper_rejection_trap) or (signal == "SELL" and is_lower_absorption_trap):
                     entry_status = "WAIT_FOR_DIP"
                     entry_badge = "🟡 REJECTION WICK (WAIT FOR RETEST)"
-                elif vwap_dist_pct <= 0.35 and rvol >= 1.35:
+                elif vwap_dist_pct <= 0.35 and rvol >= 1.35 and (
+                    (signal == "BUY" and range_pos >= 0.55 and price >= open_p) or
+                    (signal == "SELL" and range_pos <= 0.45 and price <= open_p)
+                ):
                     entry_status = "READY_NOW"
                     entry_badge = "🟢 FRESH RETEST ENTRY READY"
                 else:
@@ -1376,6 +1397,11 @@ class StockScreenerService:
                 signal = "NO_TRADE"
                 setup_type = "Filtered: NIFTY in Sideways Chop"
                 ai_score = min(ai_score, 50)
+
+            # Institutional Integrity Override: If any gatekeeper set signal to NO_TRADE, reset entry status
+            if signal == "NO_TRADE":
+                entry_status = "NO_TRADE"
+                entry_badge = "⚪ NO TRADE"
 
             # Check Criteria Checklist with Relative Strength & Dynamic ATR
             checklist = [
@@ -1525,6 +1551,8 @@ class StockScreenerService:
                 "lower_wick_ratio": lower_wick_ratio,
                 "is_upper_rejection_trap": is_upper_rejection_trap,
                 "is_lower_absorption_trap": is_lower_absorption_trap,
+                "stock_range_pct": stock_range_pct,
+                "is_active_volatility": is_active_volatility,
             }
             screened_stocks.append(stock_entry)
 
@@ -1532,12 +1560,13 @@ class StockScreenerService:
         screened_stocks.sort(key=lambda x: x.get("composite_rank_score", x["ai_score"]), reverse=True)
 
         # Top Setups are high-conviction BUY or SELL with Tier A+ or A (AI Score >= 75)
-        # Excludes stocks with opposing rejection wicks and prioritizes sweet-spot READY_NOW setups
+        # Excludes stocks with opposing rejection wicks, filters low-volatility sleepy stocks, and prioritizes sweet-spot READY_NOW setups
         candidates = [
             s for s in screened_stocks 
             if s["signal"] in ("BUY", "SELL")
             and s["ai_score"] >= 75
             and s.get("setup_tier") in ("A+", "A")
+            and s.get("is_active_volatility", True)
             and not s.get("is_upper_rejection_trap", False)
             and not s.get("is_lower_absorption_trap", False)
         ]

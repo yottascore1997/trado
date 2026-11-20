@@ -204,3 +204,45 @@ def test_retest_sweet_spot_guard_in_setup_tracker():
     assert len(engine.active_setups) == 1
     assert engine.active_setups[0]["symbol"] == "BAJAJ-AUTO"
 
+
+def test_dormant_stock_range_filter_blocks_lici(monkeypatch):
+    """
+    Test Case: LICI-like dormant stock on Nov 20.
+    Open: 406.0, High: 407.0, Low: 405.5, LTP: 406.7 (Range = 0.37% < 0.70%).
+    Even though price > VWAP and price > open, the stock has NO intraday expansion.
+    Expected: Screened stock must be marked NO_TRADE with 'Low Intraday Volatility'.
+    """
+    quotes = {
+        "NSE_INDEX:Nifty 50": {
+            "last_price": 24200.0,
+            "net_change": 150.0,
+            "ohlc": {"open": 24050.0, "high": 24250.0, "low": 24050.0, "close": 24050.0},
+        },
+        "NSE_EQ:LICI": {
+            "last_price": 406.70,
+            "net_change": 0.70,
+            "average_price": 406.20,
+            "volume": 2_500_000,
+            "ohlc": {
+                "open": 406.0,
+                "high": 407.0,  # Range = 1.50 / 406.0 = 0.37% (Sleepy stock!)
+                "low": 405.5,
+                "close": 406.0,
+            },
+        },
+    }
+
+    monkeypatch.setattr(stock_screener_service, "fetch_live_quotes", lambda *args, **kwargs: quotes)
+    monkeypatch.setattr(stock_screener_service, "is_api_session_active", lambda *args, **kwargs: (True, "Live Active"))
+
+    results = stock_screener_service.run_screener(wallet_budget=50000.0, mode="INTRADAY_STOCKS", bypass_cache=True)
+    all_stocks = results.get("all_screened_stocks", [])
+    lici = next((s for s in all_stocks if s["symbol"] == "LICI"), None)
+
+    assert lici is not None
+    assert lici["signal"] == "NO_TRADE"
+    assert lici["entry_status"] == "NO_TRADE"
+    assert lici["is_active_volatility"] is False
+    assert "Low Intraday Volatility" in lici["setup_type"]
+
+

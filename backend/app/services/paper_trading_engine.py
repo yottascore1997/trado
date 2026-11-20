@@ -554,6 +554,39 @@ class PaperTradingEngine:
                 else:
                     break
 
+        # 4b. Market Stagnation Circuit Breaker:
+        # If 2 trades have exited on STAGNATION_EXIT (time-stop) today, the market lacks momentum velocity.
+        # Halt fresh auto-entries for the rest of today to prevent theta/stagnation losses.
+        stagnation_exits = sum(1 for t in today_trades if t.get("exit_reason") == "STAGNATION_EXIT")
+        if stagnation_exits >= 2:
+            logger.info(
+                f"🛑 [STAGNATION CIRCUIT BREAKER ACTIVE] {stagnation_exits} trades exited on Stagnation Time-Stop today. "
+                f"Market is dormant with zero follow-through. Halting fresh auto-entries for today."
+            )
+            return
+
+        # 4c. Position Staggering & Underwater Guard:
+        # Do not enter a second/third position simultaneously if the currently open position is underwater
+        # or was opened less than 15 minutes ago.
+        if len(self.open_positions) > 0:
+            for p in self.open_positions:
+                unrealized = p.get("unrealized_pnl", 0.0)
+                t_str = p.get("entry_time")
+                if t_str and unrealized < 0:
+                    try:
+                        edt = datetime.fromisoformat(t_str)
+                        if edt.tzinfo is None:
+                            edt = edt.replace(tzinfo=IST)
+                        elapsed = (now_ist - edt).total_seconds() / 60.0
+                        if elapsed < 15.0:
+                            logger.info(
+                                f"⏸️ [ENTRY STAGGERING GUARD] Holding fresh entry: Active position {p['symbol']} "
+                                f"entered {elapsed:.0f}m ago is currently underwater (₹{unrealized:.2f}). Awaiting momentum confirmation."
+                            )
+                            return
+                    except Exception:
+                        pass
+
         max_active = int(active_plan.get("max_active_trades", 2 if self.wallet_budget <= 25000.0 else 3))
         if len(self.open_positions) >= max_active:
             return  # Already at maximum active allocation
@@ -636,6 +669,11 @@ class PaperTradingEngine:
             # Candle Wick Trap Guard: Never enter if upper rejection wick (BUY) or lower absorption wick (SELL)
             if setup.get("is_upper_rejection_trap") or setup.get("is_lower_absorption_trap"):
                 logger.info(f"🚫 [CANDLE WICK TRAP GUARD] {sym}: Rejection wick trap detected. Entry blocked.")
+                continue
+
+            # Sleepy Stock Filter: Never enter stocks with dormant daily range (<0.70%)
+            if setup.get("is_active_volatility") is False:
+                logger.info(f"🚫 [LOW VOLATILITY BLOCKED] {sym}: Stock is dormant (range < 0.70%).")
                 continue
 
             price = float(setup.get("price") or setup.get("entry_price", 0.0))

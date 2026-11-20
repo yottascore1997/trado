@@ -382,6 +382,12 @@ class SetupTrackerEngine:
                             logger.info(f"Daily setup cap reached ({today_total}/{self.max_daily_trades}). Skipping further entries.")
                             break
 
+                        # Stagnation Circuit Breaker: If 2 setups hit STAGNATION_EXIT today, market is dormant
+                        today_stagnations = sum(1 for c in self.closed_setups if c.get("date") == today_str and c.get("exit_reason") == "STAGNATION_EXIT")
+                        if today_stagnations >= 2:
+                            logger.info(f"Stagnation circuit breaker active: {today_stagnations} setups hit time-stop today. Halting setups.")
+                            break
+
                         sym = setup.get("symbol")
                         if not sym:
                             continue
@@ -417,6 +423,11 @@ class SetupTrackerEngine:
                         # Candle Wick Trap Guard: Never enter if upper rejection wick (BUY) or lower absorption wick (SELL)
                         if setup.get("is_upper_rejection_trap") or setup.get("is_lower_absorption_trap"):
                             logger.debug(f"Skipping setup for {sym}: Rejection wick trap detected.")
+                            continue
+
+                        # Sleepy Stock Filter: Never enter stocks with dormant daily range (<0.70%)
+                        if setup.get("is_active_volatility") is False:
+                            logger.debug(f"Skipping setup for {sym}: Dormant intraday range (< 0.70%).")
                             continue
 
                         price = float(setup.get("price") or setup.get("entry_price", 0.0))

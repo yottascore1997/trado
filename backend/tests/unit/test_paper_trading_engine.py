@@ -620,5 +620,99 @@ def test_retest_dip_and_wick_trap_blocked_from_auto_entry():
     assert engine.open_positions[0]["symbol"] == "TCS"
 
 
+def test_stagnation_circuit_breaker_halts_auto_entries():
+    """
+    Validates that when 2 trades have exited via STAGNATION_EXIT (time-stop),
+    the system halts fresh auto-entries for the rest of today (Zero-Momentum Protection).
+    """
+    engine = PaperTradingEngine(initial_budget=50000.0, persist=False)
+    today_str = datetime.now(IST).strftime("%Y-%m-%d")
+    engine.closed_trades = [
+        {"symbol": "M&M", "side": "BUY", "net_pnl": -514.19, "exit_reason": "STAGNATION_EXIT", "date": today_str},
+        {"symbol": "BHARTIARTL", "side": "BUY", "net_pnl": -517.88, "exit_reason": "STAGNATION_EXIT", "date": today_str},
+    ]
+
+    mock_setups = [
+        {
+            "symbol": "RELIANCE",
+            "signal": "BUY",
+            "price": 3000.0,
+            "entry_price": 3000.0,
+            "stop_loss": 2960.0,
+            "target_price": 3060.0,
+            "setup_tier": "A+",
+            "alignment_status": "ALIGNED_BULLISH",
+            "index_aligned": True,
+            "entry_status": "READY_NOW",
+        }
+    ]
+
+    engine.process_market_tick(
+        {"NSE_EQ:RELIANCE": {"last_price": 3000.0}},
+        top_setups=mock_setups,
+        current_time=datetime.now(IST),
+    )
+
+    # Must be BLOCKED by Stagnation Circuit Breaker!
+    assert len(engine.open_positions) == 0
+
+
+def test_position_staggering_underwater_guard():
+    """
+    Validates that when an open position is currently underwater and was entered < 15 minutes ago,
+    the engine holds off entering a second/third simultaneous trade.
+    """
+    engine = PaperTradingEngine(initial_budget=50000.0, persist=False)
+    now = datetime(2026, 9, 23, 10, 5, tzinfo=IST)
+    entry_time = datetime(2026, 9, 23, 10, 0, tzinfo=IST)  # Entered 5 mins ago!
+
+    # Active position currently underwater
+    engine.open_positions = [
+        {
+            "position_id": "POS-1",
+            "symbol": "M&M",
+            "side": "BUY",
+            "quantity": 34,
+            "entry_price": 3517.5,
+            "current_price": 3510.0,
+            "stop_loss": 3480.0,
+            "target_price": 3570.0,
+            "margin_required": 24000.0,
+            "unrealized_pnl": -255.0,  # Underwater!
+            "pnl_pct": -1.06,
+            "entry_time": entry_time.isoformat(),
+        }
+    ]
+
+    mock_setups = [
+        {
+            "symbol": "BHARTIARTL",
+            "signal": "BUY",
+            "price": 2157.4,
+            "entry_price": 2157.4,
+            "stop_loss": 2130.0,
+            "target_price": 2200.0,
+            "setup_tier": "A+",
+            "alignment_status": "ALIGNED_BULLISH",
+            "index_aligned": True,
+            "entry_status": "READY_NOW",
+        }
+    ]
+
+    engine.process_market_tick(
+        {
+            "NSE_EQ:M&M": {"last_price": 3510.0},
+            "NSE_EQ:BHARTIARTL": {"last_price": 2157.4},
+        },
+        top_setups=mock_setups,
+        current_time=now,
+    )
+
+    # Must NOT have entered BHARTIARTL! Only M&M remains open!
+    assert len(engine.open_positions) == 1
+    assert engine.open_positions[0]["symbol"] == "M&M"
+
+
+
 
 
