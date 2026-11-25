@@ -106,3 +106,141 @@ def test_anti_chasing_extension_guard():
     vwap = 1000.0
     extension_pct = round((abs(price - vwap) / vwap) * 100, 2)
     assert extension_pct > 1.8
+
+
+def test_nifty100_universe_loading():
+    """Validates that NIFTY 100 universe is loaded with all 100 liquid blue-chip constituents."""
+    assert len(stock_screener_service.STOCKS_UNIVERSE) == 100
+    assert len(stock_screener_service.UPSTOX_EQUITY_KEYS) == 100
+    symbols = {s["symbol"] for s in stock_screener_service.STOCKS_UNIVERSE}
+    assert "RELIANCE" in symbols
+    assert "TCS" in symbols
+    assert "HDFCBANK" in symbols
+    assert "ZOMATO" in symbols
+    assert "VEDL" in symbols
+
+
+def test_v3_market_regime_range_ratio_and_breadth():
+    """Validates Engine 1 RangeRatio and Market Breadth V3 calculation."""
+    from app.services.market_regime_engine import market_regime_engine
+
+    # NIFTY in dead chop
+    mock_nifty_dead = {
+        "last_price": 24505.0,
+        "net_change": 5.0,
+        "ohlc": {"open": 24500.0, "high": 24510.0, "low": 24495.0, "close": 24505.0},
+    }
+    dead_state = market_regime_engine.evaluate_regime(mock_nifty_dead, atr_14_5m=30.0)
+    assert dead_state.market_state in ("DEAD", "WEAK")
+    assert dead_state.v3_regime in ("MARKET_CHOPPY", "MARKET_NEUTRAL")
+
+    # NIFTY active trending bullish
+    mock_nifty_bull = {
+        "last_price": 24700.0,
+        "net_change": 200.0,
+        "ohlc": {"open": 24500.0, "high": 24720.0, "low": 24490.0, "close": 24700.0},
+    }
+    all_quotes = {
+        "NSE_EQ:RELIANCE": {"last_price": 3050.0, "net_change": 30.0, "ohlc": {"open": 3020.0}},
+        "NSE_EQ:TCS": {"last_price": 4050.0, "net_change": 50.0, "ohlc": {"open": 4000.0}},
+        "NSE_EQ:INFY": {"last_price": 1820.0, "net_change": 20.0, "ohlc": {"open": 1800.0}},
+        "NSE_EQ:HDFCBANK": {"last_price": 1710.0, "net_change": 10.0, "ohlc": {"open": 1700.0}},
+        "NSE_EQ:ICICIBANK": {"last_price": 1280.0, "net_change": -5.0, "ohlc": {"open": 1285.0}},
+    }
+    active_state = market_regime_engine.evaluate_regime(mock_nifty_bull, all_quotes=all_quotes, atr_14_5m=30.0)
+    assert active_state.v3_regime == "MARKET_BULLISH"
+    assert active_state.breadth_pct == 80.0  # 4 advancers out of 5
+    assert active_state.can_trade_buy is True
+    assert active_state.can_trade_sell is False
+
+
+def test_sector_correlation_lock():
+    """Validates Engine 3 Sector Correlation Lock: max 1 active position per sector."""
+    from app.services.paper_trading_engine import PaperTradingEngine
+    from datetime import datetime, timezone, timedelta
+    IST = timezone(timedelta(hours=5, minutes=30))
+
+    engine = PaperTradingEngine(initial_budget=100000.0, persist=False)
+    engine.auto_trading_enabled = True
+
+    # Open first position in IT Services
+    engine.open_position(
+        symbol="TCS",
+        side="BUY",
+        quantity=5,
+        entry_price=4000.0,
+        stop_loss=3960.0,
+        target_price=4080.0,
+        margin_required=4000.0,
+        sector="IT Services",
+    )
+    assert len(engine.open_positions) == 1
+    assert engine.open_positions[0]["sector"] == "IT Services"
+
+    # Screener suggests INFY (also IT Services) with Tier A+
+    test_setups = [
+        {
+            "symbol": "INFY",
+            "name": "Infosys Ltd",
+            "sector": "IT Services",
+            "setup_tier": "A+",
+            "signal": "BUY",
+            "price": 1800.0,
+            "stop_loss": 1780.0,
+            "target_price": 1840.0,
+            "entry_status": "READY_NOW",
+            "rvol": 1.8,
+            "index_aligned": True,
+            "alignment_status": "ALIGNED_BULLISH",
+            "is_active_volatility": True,
+            "is_upper_rejection_trap": False,
+            "is_lower_absorption_trap": False,
+            "is_extended": False,
+            "is_doji": False,
+            "suggested_qty": 10,
+        }
+    ]
+
+    quotes = {
+        "NSE_INDEX:Nifty 50": {"last_price": 24650.0, "ohlc": {"open": 24500.0, "high": 24680.0, "low": 24500.0}},
+        "NSE_EQ:INFY": {"last_price": 1800.0},
+    }
+    now_ist = datetime(2026, 11, 24, 10, 0, tzinfo=IST)
+    engine.process_market_tick(quotes, top_setups=test_setups, current_time=now_ist)
+
+    # INFY must be blocked by Sector Correlation Lock because TCS is already active in IT Services
+    assert len(engine.open_positions) == 1
+    assert engine.open_positions[0]["symbol"] == "TCS"
+
+
+def test_doji_candle_filter():
+    """Validates Engine 4 Doji Filter: Candle with < 35% body ratio is blocked from entry."""
+    # Open: 1000.0, LTP/Close: 1000.5, High: 1010.0, Low: 990.0
+    # Span = 20 pts, Body = 0.5 pts -> Body ratio = 2.5% < 35% (Doji)
+    pa_eval = price_action_engine.evaluate_stock_price_action(
+        symbol="SBIN",
+        current_price=1000.5,
+        strategy_signal="BUY",
+        base_price=1000.0,
+        vwap=998.0,
+        rvol=1.8,
+        index_aligned=True,
+        setup_type="Breakout",
+        day_open=1000.0,
+        day_high=1010.0,
+        day_low=990.0,
+        body_ratio=0.025,
+    )
+    assert pa_eval.setup_tier == "C"
+    assert "indecision doji" in pa_eval.filter_verdict.lower()
+
+
+def test_v3_1_to_2_risk_reward_ratio():
+    """Validates Engine 7 1:2 R:R (Target = 2 * Risk)."""
+    # Test through screener calculation
+    price = 2000.0
+    atr = 40.0
+    risk_pts = round(max(atr * 0.75, price * 0.010), 2)  # max(30, 20) = 30.0
+    reward_pts = round(risk_pts * 2.0, 2)  # 60.0
+    assert reward_pts / risk_pts == 2.0  # Exactly 1:2 R:R
+

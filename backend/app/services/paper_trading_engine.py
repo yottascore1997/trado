@@ -625,6 +625,21 @@ class PaperTradingEngine:
                 logger.debug(f"Skipping auto-entry for {sym}: {reason}")
                 continue
 
+            # Engine 3: Sector Correlation Lock (Max 1 position per sector)
+            setup_sector = setup.get("sector")
+            existing_sectors = {p.get("sector") for p in self.open_positions if p.get("sector")}
+            if setup_sector and setup_sector in existing_sectors:
+                logger.info(
+                    f"🚫 [SECTOR CORRELATION LOCK] {sym}: Sector '{setup_sector}' already has an active position. "
+                    f"Max 1 position per sector rule enforced."
+                )
+                continue
+
+            # Engine 4: Indecision Doji Candle Guard
+            if setup.get("is_doji"):
+                logger.info(f"🚫 [DOJI FILTER BLOCKED] {sym}: Candle body is <35% of span (Indecision Doji).")
+                continue
+
             # Strict Institutional Volume Guard: Never enter low-volume fake breakouts/breakdowns
             setup_rvol = float(setup.get("rvol", 1.5))
             if setup_rvol < 1.20:

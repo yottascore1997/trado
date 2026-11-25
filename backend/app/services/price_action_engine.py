@@ -61,6 +61,8 @@ class PriceActionEngine:
         ema_20: Optional[float] = None,
         upper_wick_ratio: float = 0.0,
         lower_wick_ratio: float = 0.0,
+        vwap_dist_atr: Optional[float] = None,
+        body_ratio: Optional[float] = None,
     ) -> PriceActionEvaluation:
         """
         Evaluates the 0-20 Price Action Scoring Rubric for a given stock with institutional
@@ -167,6 +169,8 @@ class PriceActionEngine:
             ]
             total_score = sum(c["points"] for c in checklist)
 
+            is_doji = (body_ratio is not None and body_ratio < 0.35 and (day_high is not None and day_low is not None and (day_high - day_low) > 0.05))
+
             # Strict Institutional Tier Assignment:
             if is_below_day_open:
                 tier = "C"
@@ -174,6 +178,9 @@ class PriceActionEngine:
             elif is_wick_rejection:
                 tier = "C"
                 verdict = f"C Setup (FILTERED): {symbol} upper rejection wick {int(upper_wick_ratio*100)}% > 35% (Institutional Selling Exhaustion)."
+            elif is_doji:
+                tier = "C"
+                verdict = f"C Setup (FILTERED): {symbol} indecision doji candle ({int(body_ratio*100)}% body < 35%)."
             elif index_aligned and total_score >= 17 and rvol >= 1.60 and range_pos >= 0.60:
                 tier = "A+"
                 verdict = f"A+ Prime Setup: Confirmed Breakout & Retest with strong S/R polarity flip and {rvol}x RVOL."
@@ -219,6 +226,8 @@ class PriceActionEngine:
             ]
             total_score = sum(c["points"] for c in checklist)
 
+            is_doji = (body_ratio is not None and body_ratio < 0.35 and (day_high is not None and day_low is not None and (day_high - day_low) > 0.05))
+
             # Strict Institutional Tier Assignment:
             if is_above_day_open:
                 tier = "C"
@@ -226,6 +235,9 @@ class PriceActionEngine:
             elif is_wick_absorption:
                 tier = "C"
                 verdict = f"C Short Setup (FILTERED): {symbol} lower absorption wick {int(lower_wick_ratio*100)}% > 35% (Institutional Buying Support)."
+            elif is_doji:
+                tier = "C"
+                verdict = f"C Short Setup (FILTERED): {symbol} indecision doji candle ({int(body_ratio*100)}% body < 35%)."
             elif index_aligned and total_score >= 17 and rvol >= 1.60 and range_pos <= 0.40:
                 tier = "A+"
                 verdict = f"A+ Prime Short Setup: Confirmed breakdown with strong rejection and {rvol}x RVOL."

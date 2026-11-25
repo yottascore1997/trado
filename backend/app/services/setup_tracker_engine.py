@@ -412,6 +412,18 @@ class SetupTrackerEngine:
                         if tier not in ("A+", "A") or signal not in ("BUY", "SELL"):
                             continue
 
+                        # Engine 3: Sector Correlation Lock (Max 1 position per sector)
+                        setup_sector = setup.get("sector")
+                        existing_sectors = {p.get("sector") for p in self.active_setups if p.get("sector")}
+                        if setup_sector and setup_sector in existing_sectors:
+                            logger.debug(f"Skipping setup for {sym}: Sector '{setup_sector}' already active. Max 1 per sector.")
+                            continue
+
+                        # Engine 4: Indecision Doji Candle Guard
+                        if setup.get("is_doji"):
+                            logger.debug(f"Skipping setup for {sym}: Indecision Doji candle (<35% body).")
+                            continue
+
                         # Strict Anti-Chasing & Retest Sweet-Spot Filter:
                         # Only enter if in sweet spot (READY_NOW) or entry_status not specified (test fixtures)
                         # Never enter setups awaiting dip/retest (WAIT_FOR_DIP) or over-extended setups (EXTENDED_MISSED)
@@ -443,6 +455,7 @@ class SetupTrackerEngine:
                         setup_entry = {
                             "setup_id": f"SET-{uuid.uuid4().hex[:8].upper()}",
                             "symbol": sym,
+                            "sector": setup_sector or setup.get("sector") or "NSE Equity",
                             "setup_tier": tier,  # "A+" or "A"
                             "tier_label": "⭐ A+ Institutional" if tier == "A+" else "✨ A High Conviction",
                             "setup_type": setup.get("setup_type") or setup.get("pattern") or "Algorithmic Setup",

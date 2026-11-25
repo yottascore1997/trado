@@ -1,19 +1,39 @@
+import os
+import json
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional, Tuple
 import random
 
 from app.core.logger import logger
 from app.services.price_action_engine import price_action_engine
+from app.services.market_regime_engine import market_regime_engine
+
+
+def _load_nifty100_universe() -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
+    """Loads NIFTY 100 constituent universe and Upstox instrument keys."""
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    u_path = os.path.join(base_dir, "data", "nifty100_universe.json")
+    if os.path.exists(u_path):
+        try:
+            with open(u_path, "r", encoding="utf-8") as f:
+                d = json.load(f)
+                return d.get("universe", []), d.get("keys", {})
+        except Exception as e:
+            logger.warning(f"Failed to load nifty100_universe.json: {e}")
+    return [], {}
+
+
+_n100_univ, _n100_keys = _load_nifty100_universe()
 
 
 class StockScreenerService:
     """
     Dual-Engine Intraday Stock Scanner & Signal Service.
     Implements multi-stage funnel:
-    2,000+ Universe -> Liquidity & Volume -> Technical Setup -> Index Alignment -> AI Scoring -> Top 5 Setups.
+    NIFTY 100 Universe -> Liquidity & Volume -> Technical Setup -> Index Alignment -> AI Scoring -> Top 5 Setups.
     """
 
-    STOCKS_UNIVERSE = [
+    _fallback_universe = [
         {
                 "symbol": "ABB",
                 "name": "Abb India Limited",
@@ -644,10 +664,9 @@ class StockScreenerService:
                 "avg_volume": 2500000,
                 "base_price": 1000.0
         }
-]
+    ]
 
-
-    UPSTOX_EQUITY_KEYS = {
+    _fallback_keys = {
         "ABB": "NSE_EQ|INE117A01022",
         "ADANIENT": "NSE_EQ|INE423A01024",
         "ADANIPORTS": "NSE_EQ|INE742F01042",
@@ -719,6 +738,10 @@ class StockScreenerService:
         "VEDL": "NSE_EQ|INE205A01025",
         "WIPRO": "NSE_EQ|INE075A01022",
     }
+
+    # Dynamically assign NIFTY 100 universe and Upstox keys
+    STOCKS_UNIVERSE = _n100_univ if _n100_univ else _fallback_universe
+    UPSTOX_EQUITY_KEYS = _n100_keys if _n100_keys else _fallback_keys
 
 
     @staticmethod
@@ -838,6 +861,8 @@ class StockScreenerService:
                 n_signal = "NO_TRADE"
                 n_score = 65
 
+            v3_eval = market_regime_engine.evaluate_regime(nifty_quote=nifty_quote, all_quotes=quotes)
+
             res.append({
                 "symbol": "NIFTY 50",
                 "name": "NIFTY 50 Benchmark Index",
@@ -852,6 +877,16 @@ class StockScreenerService:
                 "day_high": n_high,
                 "day_low": n_low,
                 "source": "UPSTOX_LIVE",
+                # Engine 1: V3 Quantitative Market Regime
+                "v3_regime": v3_eval.v3_regime,
+                "range_ratio": v3_eval.range_ratio,
+                "market_state": v3_eval.market_state,
+                "breadth_pct": v3_eval.breadth_pct,
+                "advancers": v3_eval.advancers,
+                "decliners": v3_eval.decliners,
+                "can_trade_buy": v3_eval.can_trade_buy,
+                "can_trade_sell": v3_eval.can_trade_sell,
+                "market_verdict": v3_eval.verdict,
             })
 
         # Construct BANK NIFTY
@@ -922,6 +957,15 @@ class StockScreenerService:
                     "day_high": 24550.0,
                     "day_low": 24450.0,
                     "source": "UPSTOX_LIVE",
+                    "v3_regime": "MARKET_NEUTRAL",
+                    "range_ratio": 0.50,
+                    "market_state": "MODERATE",
+                    "breadth_pct": 50.0,
+                    "advancers": 0,
+                    "decliners": 0,
+                    "can_trade_buy": False,
+                    "can_trade_sell": False,
+                    "market_verdict": "Neutral benchmark",
                 },
                 {
                     "symbol": "BANK NIFTY",
@@ -1137,6 +1181,8 @@ class StockScreenerService:
                 vwap = float(quote.get("average_price") or quote.get("vwap") or round((open_p + high_p + low_p + price) / 4.0, 2))
                 day_range = max(high_p - low_p, price * 0.008)
                 atr = round(day_range, 2)
+                # V3 ATR-Normalized Retest Distance
+                vwap_dist_atr = round(abs(price - vwap) / max(atr, 0.01), 2)
 
                 # 1. Time-of-Day Normalized Relative Volume (RVOL)
                 expected_vol = max(100.0, item["avg_volume"] * expected_vol_fraction)
@@ -1166,10 +1212,14 @@ class StockScreenerService:
                 # Stock opened higher than yesterday's close (gap up), but is currently trading BELOW today's open!
                 is_gap_fade_trap = (open_p > close_p) and (price < open_p)
 
-                # 6. Candle Wick & Absorption Analysis (Filters Institutional Traps & Exhaustion)
+                # 6. Candle Wick, Body & Absorption Analysis (Filters Institutional Traps & Exhaustion)
                 candle_span = max(high_p - low_p, price * 0.002, 0.05)
                 real_body_top = max(open_p, price)
                 real_body_bottom = min(open_p, price)
+                candle_body = real_body_top - real_body_bottom
+                body_ratio = round(candle_body / candle_span, 3)
+                is_doji = body_ratio < 0.35  # V3 Doji filter: Body must be >= 35% of total candle span
+
                 upper_wick = max(0.0, high_p - real_body_top)
                 lower_wick = max(0.0, real_body_bottom - low_p)
                 upper_wick_ratio = round(upper_wick / candle_span, 3)
@@ -1196,6 +1246,7 @@ class StockScreenerService:
                     and is_active_volatility
                     and not is_gap_fade_trap
                     and not is_upper_rejection_trap
+                    and not is_doji
                     and (price >= (vwap + vwap_entry_buffer))
                     and (range_pos >= 0.55 or is_orb_breakout)
                     and (ema_9 >= ema_20)
@@ -1204,6 +1255,7 @@ class StockScreenerService:
                     is_session_red
                     and is_active_volatility
                     and not is_lower_absorption_trap
+                    and not is_doji
                     and (price <= (vwap - vwap_entry_buffer))
                     and (range_pos <= 0.45 or is_orb_breakdown)
                     and (ema_9 <= ema_20)
@@ -1214,9 +1266,9 @@ class StockScreenerService:
                     trend_5m = "BULLISH"
                     trend_15m = "BULLISH"
                     breakout = is_orb_breakout
-                    # Realistic Intraday Volatility Stop: Minimum 1.0% structural floor or 0.75x ATR to prevent noise whipsaws
+                    # Realistic Intraday Volatility Stop: Minimum 1.0% structural floor or 0.75x ATR
                     risk_pts = round(max(atr * 0.75, price * 0.010), 2)
-                    reward_pts = round(risk_pts * 1.6, 2)
+                    reward_pts = round(risk_pts * 2.0, 2)  # V3 1:2 R:R (Target = 2R)
                     stop_loss = round(price - risk_pts, 2)
                     target = round(price + reward_pts, 2)
                     setup_type = "Upstox Live VWAP Breakout & Retest"
@@ -1226,13 +1278,23 @@ class StockScreenerService:
                     trend_5m = "BEARISH"
                     trend_15m = "BEARISH"
                     breakout = is_orb_breakdown
-                    # Realistic Intraday Volatility Stop: Minimum 1.0% structural floor or 0.75x ATR
                     risk_pts = round(max(atr * 0.75, price * 0.010), 2)
-                    reward_pts = round(risk_pts * 1.6, 2)
+                    reward_pts = round(risk_pts * 2.0, 2)  # V3 1:2 R:R (Target = 2R)
                     stop_loss = round(price + risk_pts, 2)
                     target = round(price - reward_pts, 2)
                     setup_type = "Upstox Live VWAP Breakdown & Rejection"
                     ai_score = min(95, int(76 + abs(change_pct) * 4 + (rvol - 1.0) * 6))
+                elif is_doji and is_active_volatility and (price >= (vwap + vwap_entry_buffer) or price <= (vwap - vwap_entry_buffer)):
+                    signal = "NO_TRADE"
+                    trend_5m = "SIDEWAYS"
+                    trend_15m = "SIDEWAYS"
+                    breakout = False
+                    risk_pts = round(atr * 0.5, 2)
+                    reward_pts = round(risk_pts * 2.0, 2)
+                    stop_loss = round(price - risk_pts, 2)
+                    target = round(price + reward_pts, 2)
+                    setup_type = f"Filtered: Indecision Doji Candle ({int(body_ratio*100)}% body < 35%)"
+                    ai_score = 45
                 elif not is_active_volatility:
                     signal = "NO_TRADE"
                     trend_5m = "SIDEWAYS"
@@ -1440,7 +1502,93 @@ class StockScreenerService:
                 ema_20=ema_20,
                 upper_wick_ratio=upper_wick_ratio,
                 lower_wick_ratio=lower_wick_ratio,
+                vwap_dist_atr=vwap_dist_atr,
+                body_ratio=body_ratio,
             )
+
+            # ============================================================
+            # ENGINE 6: V3 100-POINT COMPOSITE QUALITY SCORING ENGINE
+            # ============================================================
+            n_regime = nifty_status.get("regime", "SIDEWAYS_CHOP")
+            n_trend = nifty_status.get("trend", "NEUTRAL")
+            n_range_ratio = float(nifty_status.get("range_ratio", 0.50))
+            if (signal == "BUY" and n_trend == "BULLISH") or (signal == "SELL" and n_trend == "BEARISH"):
+                nifty_pts = 20 if n_range_ratio >= 0.45 else 15
+            elif n_trend == "NEUTRAL" or n_regime == "SIDEWAYS_CHOP":
+                nifty_pts = 0
+            else:
+                nifty_pts = 0
+
+            if (signal == "BUY" and sec_status == "BULLISH") or (signal == "SELL" and sec_status == "BEARISH"):
+                sector_pts = 15
+            elif sec_status == "NEUTRAL":
+                sector_pts = 8
+            else:
+                sector_pts = 0
+
+            if signal == "BUY":
+                if not is_gap_fade_trap and body_ratio >= 0.35 and not is_upper_rejection_trap and range_pos >= 0.55:
+                    pa_pts = 20
+                elif not is_gap_fade_trap and body_ratio >= 0.25 and not is_upper_rejection_trap:
+                    pa_pts = 12
+                else:
+                    pa_pts = 0
+            elif signal == "SELL":
+                if not is_gap_fade_trap and body_ratio >= 0.35 and not is_lower_absorption_trap and range_pos <= 0.45:
+                    pa_pts = 20
+                elif not is_gap_fade_trap and body_ratio >= 0.25 and not is_lower_absorption_trap:
+                    pa_pts = 12
+                else:
+                    pa_pts = 0
+            else:
+                pa_pts = 0
+
+            if rvol >= 1.75:
+                rvol_pts = 15
+            elif rvol >= 1.35:
+                rvol_pts = 12
+            elif rvol >= 1.15:
+                rvol_pts = 7
+            else:
+                rvol_pts = 0
+
+            if 0.15 <= vwap_dist_atr <= 0.35:
+                vwap_pts = 20
+            elif vwap_dist_atr < 0.15:
+                vwap_pts = 16
+            elif vwap_dist_atr <= 0.60:
+                vwap_pts = 12
+            elif vwap_dist_atr <= 0.90:
+                vwap_pts = 5
+            else:
+                vwap_pts = 0
+
+            if (signal == "BUY" and ema_9 > ema_20) or (signal == "SELL" and ema_9 < ema_20):
+                ema_pts = 10
+            elif abs(ema_9 - ema_20) / max(ema_20, 1.0) < 0.002:
+                ema_pts = 5
+            else:
+                ema_pts = 0
+
+            v3_total_score = nifty_pts + sector_pts + pa_pts + rvol_pts + vwap_pts + ema_pts
+
+            # Setup Tier Assignment: A+ (>=85), A (75-84), B (65-74), C (<65)
+            if v3_total_score >= 85 and pa_eval.setup_tier in ("A+", "A"):
+                final_setup_tier = "A+"
+            elif v3_total_score >= 75 and pa_eval.setup_tier in ("A+", "A"):
+                final_setup_tier = "A"
+            elif v3_total_score >= 65 and pa_eval.setup_tier != "C":
+                final_setup_tier = "B"
+            else:
+                final_setup_tier = "C"
+
+            # Enforce <65 NO_TRADE threshold
+            if signal in ("BUY", "SELL") and v3_total_score < 65:
+                signal = "NO_TRADE"
+                setup_type = f"Filtered: V3 Score ({v3_total_score}/100 < 65 threshold)"
+                entry_status = "NO_TRADE"
+                entry_badge = "⚪ NO TRADE"
+                final_setup_tier = "C"
 
             # 5. Multi-Factor Composite Trade Ranking (0 to 100 Prop-Desk Quality Model)
             norm_ai = float(ai_score)
@@ -1454,9 +1602,9 @@ class StockScreenerService:
             norm_rvol = max(0.0, min(100.0, (rvol / 2.0) * 100.0))
 
             composite_rank_score = round(
-                (norm_ai * 0.40) +
-                (norm_pa * 0.25) +
-                (norm_rs * 0.20) +
+                (float(v3_total_score) * 0.50) +
+                (norm_pa * 0.20) +
+                (norm_rs * 0.15) +
                 (norm_rvol * 0.15),
                 1
             )
@@ -1533,11 +1681,11 @@ class StockScreenerService:
                 # Institutional Stock Re-Entry & Protection Rules
                 "is_eligible": is_eligible,
                 "eligibility_reason": eligibility_reason,
-                # Price Action Engine V2 Integration
+                # Price Action Engine V2 & V3 Integration
                 "price_action_score": pa_eval.score,
                 "market_structure": pa_eval.market_structure,
                 "pa_setup": pa_eval.pa_setup,
-                "setup_tier": pa_eval.setup_tier,
+                "setup_tier": final_setup_tier,
                 "retest_level": pa_eval.retest_level,
                 "filter_verdict": pa_eval.filter_verdict if is_eligible else f"PROTECTED: {eligibility_reason}",
                 "pa_checklist": pa_eval.checklist,
@@ -1553,6 +1701,19 @@ class StockScreenerService:
                 "is_lower_absorption_trap": is_lower_absorption_trap,
                 "stock_range_pct": stock_range_pct,
                 "is_active_volatility": is_active_volatility,
+                "body_ratio": body_ratio,
+                "is_doji": is_doji,
+                "vwap_dist_atr": vwap_dist_atr,
+                "v3_total_score": v3_total_score,
+                "v3_score_breakdown": {
+                    "nifty_pts": nifty_pts,
+                    "sector_pts": sector_pts,
+                    "price_action_pts": pa_pts,
+                    "rvol_pts": rvol_pts,
+                    "vwap_retest_pts": vwap_pts,
+                    "ema_momentum_pts": ema_pts,
+                    "total_score": v3_total_score,
+                },
             }
             screened_stocks.append(stock_entry)
 
