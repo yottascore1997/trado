@@ -244,3 +244,52 @@ def test_v3_1_to_2_risk_reward_ratio():
     reward_pts = round(risk_pts * 2.0, 2)  # 60.0
     assert reward_pts / risk_pts == 2.0  # Exactly 1:2 R:R
 
+
+def test_strict_sector_alignment_blocks_neutral_sector(monkeypatch):
+    """
+    Validates that a BUY signal is strictly blocked if the stock's sector is NEUTRAL or BEARISH.
+    Only stocks whose sector is strictly BULLISH are permitted to generate BUY signals.
+    """
+    mock_quotes = {
+        "NSE_INDEX:Nifty 50": {
+            "last_price": 25200.0,
+            "net_change": 120.0,
+            "ohlc": {"open": 25100.0, "high": 25220.0, "low": 25080.0, "close": 25200.0},
+        },
+        # Private Banking is BULLISH: HDFCBANK (+1.2%, above VWAP)
+        "NSE_EQ:HDFCBANK": {
+            "last_price": 1720.0,
+            "net_change": 20.0,
+            "volume": 5000000,
+            "average_price": 1710.0,
+            "ohlc": {"open": 1700.0, "high": 1725.0, "low": 1700.0, "close": 1720.0},
+        },
+        # AXISBANK in Private Banking
+        "NSE_EQ:AXISBANK": {
+            "last_price": 1420.0,
+            "net_change": 20.0,
+            "volume": 4000000,
+            "average_price": 1412.0,
+            "ohlc": {"open": 1400.0, "high": 1425.0, "low": 1400.0, "close": 1420.0},
+        },
+        # Energy & Oil is NEUTRAL / FLAT (+0.03% change): RELIANCE
+        "NSE_EQ:RELIANCE": {
+            "last_price": 2951.0,
+            "net_change": 1.0,
+            "volume": 2000000,
+            "average_price": 2950.5,
+            "ohlc": {"open": 2950.0, "high": 2955.0, "low": 2948.0, "close": 2951.0},
+        },
+    }
+
+    monkeypatch.setattr(stock_screener_service, "fetch_live_quotes", lambda: mock_quotes)
+    res = stock_screener_service.run_screener(wallet_budget=50000.0, mode="INTRADAY_STOCKS", bypass_cache=True)
+    all_screened = res.get("screened_stocks", [])
+    
+    # RELIANCE must be blocked because Energy sector is NEUTRAL (+0.03% < 0.15% threshold)
+    reliance_entry = next((s for s in all_screened if s["symbol"] == "RELIANCE"), None)
+    if reliance_entry:
+        assert reliance_entry["signal"] == "NO_TRADE"
+        assert "Sector" in reliance_entry["setup_type"]
+
+

@@ -642,8 +642,8 @@ class PaperTradingEngine:
 
             # Strict Institutional Volume Guard: Never enter low-volume fake breakouts/breakdowns
             setup_rvol = float(setup.get("rvol", 1.5))
-            if setup_rvol < 1.20:
-                logger.info(f"🚫 [AUTO-ENTRY BLOCKED] {sym}: Insufficient volume (RVOL {setup_rvol}x < 1.20x).")
+            if setup_rvol < 1.35:
+                logger.info(f"🚫 [AUTO-ENTRY BLOCKED] {sym}: Insufficient volume (RVOL {setup_rvol}x < 1.35x).")
                 continue
 
             # Strict Index Alignment Guard: Block counter-trend setups opposing NIFTY trend

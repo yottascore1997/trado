@@ -1355,22 +1355,24 @@ class StockScreenerService:
             vwap_dist_pct = round(abs(price - vwap) / max(vwap, 0.01) * 100.0, 2)
             is_extended = (open_distance_pct > 1.60) or (vwap_dist_pct > 0.85) or (atr_extension_ratio > 1.25)
 
-            # 4. Sector Trend Health Gatekeeper (Prevents buying into weak falling sectors like IT today)
+            # 4. Sector Trend Health Gatekeeper (Strict Sector Confirmation)
             stock_sector = item.get("sector")
             sec_info = sector_performance.get(stock_sector)
             sec_status = sec_info.get("status", "NEUTRAL") if sec_info else "NEUTRAL"
             sector_blocked = False
 
             if sec_info:
-                if signal == "BUY" and sec_status == "BEARISH":
+                # Strict Sector Confirmation: BUY strictly requires Sector to be BULLISH
+                # SELL strictly requires Sector to be BEARISH. Neutral sectors block new momentum entries.
+                if signal == "BUY" and sec_status != "BULLISH":
                     sector_blocked = True
                     signal = "NO_TRADE"
-                    setup_type = f"Blocked: {stock_sector} in Sector Downtrend ({sec_info['avg_change_pct']}%)"
+                    setup_type = f"Blocked: {stock_sector} Sector is {sec_status} (Requires BULLISH Sector)"
                     ai_score = min(ai_score, 45)
-                elif signal == "SELL" and sec_status == "BULLISH":
+                elif signal == "SELL" and sec_status != "BEARISH":
                     sector_blocked = True
                     signal = "NO_TRADE"
-                    setup_type = f"Blocked: {stock_sector} in Sector Uptrend ({sec_info['avg_change_pct']}%)"
+                    setup_type = f"Blocked: {stock_sector} Sector is {sec_status} (Requires BEARISH Sector)"
                     ai_score = min(ai_score, 45)
 
             # 5. Relative Strength (RS) vs NIFTY 50
@@ -1390,7 +1392,7 @@ class StockScreenerService:
                 elif (signal == "BUY" and is_upper_rejection_trap) or (signal == "SELL" and is_lower_absorption_trap):
                     entry_status = "WAIT_FOR_DIP"
                     entry_badge = "🟡 REJECTION WICK (WAIT FOR RETEST)"
-                elif vwap_dist_pct <= 0.35 and rvol >= 1.35 and (
+                elif (vwap_dist_pct <= 0.35 or (0.15 <= vwap_dist_atr <= 0.40)) and vwap_dist_atr <= 0.60 and rvol >= 1.35 and (
                     (signal == "BUY" and range_pos >= 0.55 and price >= open_p) or
                     (signal == "SELL" and range_pos <= 0.45 and price <= open_p)
                 ):
