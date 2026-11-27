@@ -382,60 +382,72 @@ def test_auto_square_off_at_three_fifteen_pm():
 
 def test_thesis_invalidation_buy_early_exit():
     """
-    Validates that if a BUY position loses VWAP support beyond 0.20% buffer while underwater,
-    it requires 2 consecutive ticks to confirm thesis invalidation and execute an early exit.
+    Validates sustained VWAP thesis invalidation for BUY:
+    - Noise within first 5 minutes or < 15 ticks does NOT prematurely close the position.
+    - Once held >= 5m and price stays >= 0.40% below VWAP & >= 50% of SL distance underwater
+      for 15 consecutive ticks (~60s), THESIS_INVALIDATED triggers cleanly.
     """
     engine = PaperTradingEngine(initial_budget=10000.0, persist=False)
+    t_entry = datetime(2026, 9, 23, 10, 0, tzinfo=IST)
     pos = engine.open_position(
         symbol="TATASTEEL",
         side="BUY",
         quantity=100,
         entry_price=187.40,
-        stop_loss=186.11,   # 1.29 pts full SL
-        target_price=190.11,
+        stop_loss=185.40,   # 2.00 pts full SL
+        target_price=191.40,
         margin_required=3748.0,
         vwap=187.10,
+        entry_time=t_entry.astimezone(timezone.utc),
     )
     assert len(engine.open_positions) == 1
 
-    # Price drops to 186.50: Below VWAP 187.10 (beyond 0.20% buffer: 187.10 - 0.37 = 186.73)
-    # and below Entry 187.40, but above SL 186.11
+    # Price drops to 186.20: Below VWAP 187.10 by 0.90 (>0.40% buffer 0.75) and 1.20 underwater (>= 50% of 2.00 SL)
     quotes = {
         "NSE_EQ:TATASTEEL": {
-            "last_price": 186.50,
+            "last_price": 186.20,
             "average_price": 187.10,
-            "ohlc": {"open": 187.0, "high": 187.5, "low": 186.4, "close": 186.5},
+            "ohlc": {"open": 187.0, "high": 187.5, "low": 186.1, "close": 186.2},
         }
     }
 
-    # Tick 1: First breach logged as warning, position remains open (noise protection)
-    engine.process_market_tick(quotes)
+    # Within first 5 minutes -> protected from noise shakeout
+    t_early = t_entry + timedelta(minutes=2)
+    for _ in range(5):
+        engine.process_market_tick(quotes, current_time=t_early)
+    assert len(engine.open_positions) == 1
+    assert engine.open_positions[0]["vwap_breach_count"] == 0
+
+    # After 6 minutes: requires 15 consecutive ticks (~60s)
+    t_later = t_entry + timedelta(minutes=6)
+    engine.process_market_tick(quotes, current_time=t_later)
     assert len(engine.open_positions) == 1
     assert engine.open_positions[0]["vwap_breach_count"] == 1
 
-    # Tick 2: Second consecutive breach logged as warning, position still open
-    engine.process_market_tick(quotes)
+    for _ in range(13):
+        engine.process_market_tick(quotes, current_time=t_later)
     assert len(engine.open_positions) == 1
-    assert engine.open_positions[0]["vwap_breach_count"] == 2
+    assert engine.open_positions[0]["vwap_breach_count"] == 14
 
-    # Tick 3: Third consecutive breach confirms sustained invalidation and triggers early exit
-    engine.process_market_tick(quotes)
+    # Tick 15 confirms sustained invalidation and triggers early exit
+    engine.process_market_tick(quotes, current_time=t_later)
     assert len(engine.open_positions) == 0
     trade = engine.closed_trades[-1]
     assert trade["symbol"] == "TATASTEEL"
     assert trade["exit_reason"] == "THESIS_INVALIDATED"
-    assert trade["exit_price"] == 186.50
-    # Early exit loss is -₹90, saving the trader from -₹129 full SL loss!
-    assert trade["gross_pnl"] == round((186.50 - 187.40) * 100, 2)
-    assert abs(trade["gross_pnl"]) < abs((186.11 - 187.40) * 100)
+    assert trade["exit_price"] == 186.20
+    assert trade["gross_pnl"] == round((186.20 - 187.40) * 100, 2)
+    assert abs(trade["gross_pnl"]) < abs((185.40 - 187.40) * 100)
 
 
 def test_thesis_invalidation_sell_early_exit():
     """
-    Validates that if a SELL position's price climbs back above VWAP resistance beyond buffer
-    while underwater, it requires 3 consecutive ticks to confirm thesis invalidation and execute an early exit.
+    Validates sustained VWAP thesis invalidation for SELL:
+    - Noise within first 5 minutes does NOT trigger exit.
+    - After >= 5m, 15 consecutive ticks >= 0.40% above VWAP and >= 50% SL underwater triggers THESIS_INVALIDATED.
     """
     engine = PaperTradingEngine(initial_budget=10000.0, persist=False)
+    t_entry = datetime(2026, 9, 23, 10, 0, tzinfo=IST)
     pos = engine.open_position(
         symbol="INFY",
         side="SELL",
@@ -445,39 +457,119 @@ def test_thesis_invalidation_sell_early_exit():
         target_price=1460.0,
         margin_required=3000.0,
         vwap=1495.0,
+        entry_time=t_entry.astimezone(timezone.utc),
     )
     assert len(engine.open_positions) == 1
 
-    # Price rises to 1505.0: Above VWAP 1495.0 (beyond buffer: 1495 + 3.74 = 1498.74)
-    # and above Entry 1500.0, but well below SL 1520.0
+    # Price rises to 1511.0: Above VWAP 1495.0 by 16.0 (>0.40% buffer 5.98) and 11.0 underwater (>= 50% of 20 SL)
     quotes = {
         "NSE_EQ:INFY": {
-            "last_price": 1505.0,
+            "last_price": 1511.0,
             "average_price": 1495.0,
-            "ohlc": {"open": 1495.0, "high": 1510.0, "low": 1490.0, "close": 1505.0},
+            "ohlc": {"open": 1495.0, "high": 1512.0, "low": 1490.0, "close": 1511.0},
         }
     }
 
-    # Tick 1: First breach logged as warning, position remains open
-    engine.process_market_tick(quotes)
+    t_later = t_entry + timedelta(minutes=6)
+    engine.process_market_tick(quotes, current_time=t_later)
     assert len(engine.open_positions) == 1
     assert engine.open_positions[0]["vwap_breach_count"] == 1
 
-    # Tick 2: Second consecutive breach logged as warning, position still open
-    engine.process_market_tick(quotes)
+    for _ in range(13):
+        engine.process_market_tick(quotes, current_time=t_later)
     assert len(engine.open_positions) == 1
-    assert engine.open_positions[0]["vwap_breach_count"] == 2
 
-    # Tick 3: Third consecutive breach confirms sustained invalidation and triggers early exit
-    engine.process_market_tick(quotes)
+    engine.process_market_tick(quotes, current_time=t_later)
     assert len(engine.open_positions) == 0
     trade = engine.closed_trades[-1]
     assert trade["symbol"] == "INFY"
     assert trade["exit_reason"] == "THESIS_INVALIDATED"
-    assert trade["exit_price"] == 1505.0
-    # Early exit loss is -₹50, saving the trader from -₹200 full SL loss!
-    assert trade["gross_pnl"] == round((1500.0 - 1505.0) * 10, 2)
+    assert trade["exit_price"] == 1511.0
+    assert trade["gross_pnl"] == round((1500.0 - 1511.0) * 10, 2)
     assert abs(trade["gross_pnl"]) < abs((1500.0 - 1520.0) * 10)
+
+
+def test_bhel_breakeven_covers_flat_brokerage_and_taxes():
+    """Reproduces BHEL (124 qty @ ₹419.65): True Breakeven SL must cover ₹40+GST & STT so net_pnl >= 0."""
+    engine = PaperTradingEngine(initial_budget=100000.0, persist=False)
+    pos = engine.open_position(
+        symbol="BHEL",
+        side="BUY",
+        quantity=124,
+        entry_price=419.65,
+        stop_loss=415.45,
+        target_price=428.05,  # 8.40 target dist -> 35% = +2.94 -> 422.59
+        margin_required=10407.32,
+    )
+    # Price moves to 422.70 (36% of target) -> trails SL to true breakeven covering all charges
+    engine.process_market_tick({"NSE_EQ:BHEL": {"last_price": 422.70}})
+    assert engine.open_positions[0]["trailing_stage"] == "BREAKEVEN"
+    be_sl = engine.open_positions[0]["stop_loss"]
+    assert be_sl >= 420.20
+
+    # Price reverses and hits exact BE SL
+    engine.process_market_tick({"NSE_EQ:BHEL": {"last_price": be_sl}})
+    assert len(engine.open_positions) == 0
+    trade = engine.closed_trades[-1]
+    assert trade["exit_reason"] == "BREAKEVEN_EXIT"
+    assert trade["net_pnl"] > 0.0  # Never -₹28.33!
+
+
+def test_staggered_entry_and_whipsaw_circuit_breaker():
+    """
+    Validates:
+    1. Max 1 position is opened per tick (prevents opening 3 simultaneous SELL trades at once).
+    2. If losses occur on both BUY and SELL sides (two-sided whipsaw), auto-trading halts for the day.
+    """
+    engine = PaperTradingEngine(initial_budget=100000.0, persist=False)
+    t_now = datetime(2026, 11, 26, 10, 30, tzinfo=IST)
+    setups = [
+        {
+            "symbol": "BANKBARODA",
+            "signal": "SELL",
+            "price": 276.09,
+            "stop_loss": 279.0,
+            "target_price": 270.0,
+            "suggested_qty": 226,
+            "setup_tier": "A+",
+            "index_aligned": True,
+            "alignment_status": "ALIGNED_BEARISH",
+            "rvol": 1.8,
+            "sector": "Public Banking",
+        },
+        {
+            "symbol": "AMBUJACEM",
+            "signal": "SELL",
+            "price": 388.50,
+            "stop_loss": 392.5,
+            "target_price": 380.5,
+            "suggested_qty": 160,
+            "setup_tier": "A+",
+            "index_aligned": True,
+            "alignment_status": "ALIGNED_BEARISH",
+            "rvol": 1.8,
+            "sector": "Cement",
+        },
+    ]
+    quotes = {
+        "NSE_INDEX:Nifty 50": {"last_price": 24400.0, "ohlc": {"open": 24500.0, "high": 24510.0, "low": 24390.0}},
+        "NSE_EQ:BANKBARODA": {"last_price": 276.09},
+        "NSE_EQ:AMBUJACEM": {"last_price": 388.50},
+    }
+    engine.process_market_tick(quotes, top_setups=setups, current_time=t_now)
+    # Only 1 trade opened on this tick!
+    assert len(engine.open_positions) == 1
+    assert engine.open_positions[0]["symbol"] == "BANKBARODA"
+
+    # Simulate 1 SELL loss + 1 BUY loss today (two-sided whipsaw)
+    engine.open_positions = []
+    today_str = t_now.strftime("%Y-%m-%d")
+    engine.closed_trades = [
+        {"symbol": "BANKBARODA", "side": "SELL", "net_pnl": -356.21, "date": today_str},
+        {"symbol": "CGPOWER", "side": "BUY", "net_pnl": -344.81, "date": today_str},
+    ]
+    engine.process_market_tick(quotes, top_setups=setups, current_time=t_now + timedelta(minutes=25))
+    assert len(engine.open_positions) == 0  # Halted by two-sided whipsaw circuit breaker!
 
 
 def test_true_breakeven_covers_brokerage_and_charges():

@@ -180,6 +180,7 @@ def test_tracker_summary_metrics(tracker):
 
 
 def test_thesis_invalidation_early_cut(tracker):
+    from datetime import timedelta
     setups = [
         {
             "symbol": "ICICIBANK",
@@ -199,14 +200,15 @@ def test_thesis_invalidation_early_cut(tracker):
     )
     assert len(tracker.active_setups) == 1
 
-    # Price drops below VWAP: 990 (VWAP is 998)
-    for i in range(3):
+    # Price drops below VWAP: 984 (VWAP 998 -> >0.40% below VWAP, 16 pts underwater >= 50% of 30 SL)
+    t_later = t1 + timedelta(minutes=6)
+    for _ in range(15):
         tracker.process_market_tick(
-            {"NSE_EQ:ICICIBANK": {"last_price": 990.0, "average_price": 998.0}},
-            current_time=t1,
+            {"NSE_EQ:ICICIBANK": {"last_price": 984.0, "average_price": 998.0}},
+            current_time=t_later,
         )
 
-    # After 3 ticks, should execute early thesis invalidation instead of waiting for SL 970
+    # After >= 5m hold and 15 ticks, should execute early thesis invalidation instead of waiting for SL 970
     assert len(tracker.active_setups) == 0
     assert len(tracker.closed_setups) == 1
     assert tracker.closed_setups[0]["exit_reason"] == "THESIS_INVALIDATED"

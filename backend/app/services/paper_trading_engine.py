@@ -104,6 +104,82 @@ class PaperTradingEngine:
         return round(sum(t["net_pnl"] for t in self.closed_trades if t.get("date") == today_str), 2)
 
     @staticmethod
+    def _estimate_round_trip_charges(
+        entry_price: float,
+        exit_price: float,
+        qty: int,
+        side: str,
+        is_opt: bool = False,
+    ) -> float:
+        """Computes realistic Indian intraday brokerage and statutory charges for a round trip."""
+        turnover = (entry_price + exit_price) * qty
+        brokerage = round(min(40.0, max(2.0, turnover * 0.0005)), 2)
+        if is_opt:
+            stt = round((exit_price * qty) * 0.00125, 2)
+        else:
+            stt = round((exit_price * qty if side == "BUY" else entry_price * qty) * 0.00025, 2)
+        exch_fee = round(turnover * 0.0000297, 2)
+        gst = round((brokerage + exch_fee) * 0.18, 2)
+        sebi_fee = round(max(0.01, turnover * 0.000001), 2)
+        stamp_duty = round((entry_price * qty if side == "BUY" else exit_price * qty) * 0.00003, 2)
+        return max(5.0, round(brokerage + stt + exch_fee + gst + sebi_fee + stamp_duty, 2))
+
+    @staticmethod
+    def _evaluate_thesis_invalidation(
+        pos: Dict[str, Any],
+        side: str,
+        current_price: float,
+        curr_vwap: float,
+        now_ist: datetime,
+    ) -> bool:
+        """
+        Sustained VWAP thesis invalidation guard:
+        - Requires >= 5 minutes of holding time (prevents immediate post-entry noise exits)
+        - Requires price >= 0.40% past VWAP AND >= max(0.45% of entry, 50% of SL distance) underwater
+        - Requires 15 consecutive breach ticks (~60 seconds at 4s poll) before cutting
+        """
+        if curr_vwap <= 0:
+            return False
+
+        entry = pos["entry_price"]
+        entry_t_str = pos.get("entry_time")
+        if entry_t_str:
+            try:
+                edt = datetime.fromisoformat(entry_t_str)
+                if edt.tzinfo is None:
+                    edt = edt.replace(tzinfo=timezone.utc)
+                holding_mins = (now_ist.astimezone(timezone.utc) - edt).total_seconds() / 60.0
+                if holding_mins < 5.0:
+                    pos["vwap_breach_count"] = 0
+                    return False
+            except Exception:
+                pass
+
+        vwap_buffer = max(0.25, round(curr_vwap * 0.0040, 2))
+        sl_dist = abs(entry - pos["stop_loss"])
+        min_underwater_dist = max(0.35, round(max(entry * 0.0045, sl_dist * 0.50), 2))
+
+        if side == "BUY":
+            threshold = round(curr_vwap - vwap_buffer, 2)
+            breached = current_price < threshold and (entry - current_price) >= min_underwater_dist
+        else:
+            threshold = round(curr_vwap + vwap_buffer, 2)
+            breached = current_price > threshold and (current_price - entry) >= min_underwater_dist
+
+        if breached:
+            breach_count = pos.get("vwap_breach_count", 0) + 1
+            pos["vwap_breach_count"] = breach_count
+            if breach_count >= 15:
+                logger.info(
+                    f"⚡ [THESIS INVALIDATED] {pos['symbol']}: Price ₹{current_price} sustained past VWAP ₹{curr_vwap} "
+                    f"for {breach_count} ticks (~60s). Executing early exit."
+                )
+                return True
+        else:
+            pos["vwap_breach_count"] = 0
+        return False
+
+    @staticmethod
     def is_market_session_open(now_ist: Optional[datetime] = None) -> bool:
         """
         Validates if Indian Equity Regular Market is currently active (Monday-Friday, 09:15 to 15:30 IST).
@@ -242,9 +318,11 @@ class PaperTradingEngine:
                                     pos["stop_loss"] = lock_px
                                     pos["trailing_stage"] = "PROFIT_LOCK"
                                     logger.info(f"🔒 [PROFIT LOCK 25%] {sym}: Trailing SL raised to ₹{lock_px} (50% target move reached)")
-                            # Stage 1: True Breakeven Protection (35%+ of target distance) -> Shift SL to Entry + Charges Friction
+                            # Stage 1: True Breakeven Protection (35%+ of target distance) -> Shift SL to Entry + Exact Round-Trip Charges
                             elif gain_ratio >= 0.35:
-                                friction = max(0.05, round(entry * 0.0006 + 0.05, 2))
+                                is_opt = "CE" in sym or "PE" in sym
+                                est_charges = self._estimate_round_trip_charges(entry, entry, qty, side, is_opt=is_opt)
+                                friction = max(0.05, round((est_charges / max(qty, 1)) + 0.05, 2))
                                 be_sl = round(entry + friction, 2)
                                 if pos["stop_loss"] < be_sl:
                                     pos["stop_loss"] = be_sl
@@ -281,30 +359,9 @@ class PaperTradingEngine:
                             except Exception:
                                 pass
 
-                        if curr_vwap > 0 and not is_cnc and (pos["position_id"] not in [p[0] for p in positions_to_close]):
-                            # ⚡ Sustained Thesis Invalidation: Requires at least 3 consecutive ticks below threshold
-                            # to filter out deceptive 5-10 second liquidity sweep wicks
-                            vwap_buffer = max(0.15, round(curr_vwap * 0.0025, 2))
-                            threshold = round(curr_vwap - vwap_buffer, 2)
-                            sl_dist = abs(entry - pos["stop_loss"])
-                            min_underwater_dist = max(0.20, round(max(entry * 0.0025, sl_dist * 0.25), 2))
-                            if current_price < threshold and (entry - current_price) >= min_underwater_dist:
-                                breach_count = pos.get("vwap_breach_count", 0) + 1
-                                pos["vwap_breach_count"] = breach_count
-                                if breach_count >= 3:
-                                    logger.info(
-                                        f"⚡ [THESIS INVALIDATED] {sym}: Price ₹{current_price} sustained below VWAP ₹{curr_vwap} "
-                                        f"(loss: ₹{round(entry - current_price, 2)} >= ₹{min_underwater_dist}) "
-                                        f"confirmed across {breach_count} ticks. Executing early exit."
-                                    )
-                                    positions_to_close.append((pos["position_id"], "THESIS_INVALIDATED", current_price))
-                                else:
-                                    logger.debug(
-                                        f"⚠️ [VWAP BREACH WARNING] {sym}: Price ₹{current_price} below VWAP threshold ₹{threshold} "
-                                        f"(breach {breach_count}/3). Awaiting sustained confirmation."
-                                    )
-                            else:
-                                pos["vwap_breach_count"] = 0
+                        if not is_cnc and (pos["position_id"] not in [p[0] for p in positions_to_close]):
+                            if self._evaluate_thesis_invalidation(pos, side, current_price, curr_vwap, now_ist):
+                                positions_to_close.append((pos["position_id"], "THESIS_INVALIDATED", current_price))
 
                     elif side == "SELL":
                         pnl = round((entry - current_price) * qty, 2)
@@ -341,9 +398,11 @@ class PaperTradingEngine:
                                     pos["stop_loss"] = lock_px
                                     pos["trailing_stage"] = "PROFIT_LOCK"
                                     logger.info(f"🔒 [PROFIT LOCK 25%] {sym}: Trailing SL lowered to ₹{lock_px} (50% target move reached)")
-                            # Stage 1: True Breakeven Protection (35%+ of target distance) -> Shift SL to Entry - Charges Friction
+                            # Stage 1: True Breakeven Protection (35%+ of target distance) -> Shift SL to Entry - Exact Round-Trip Charges
                             elif gain_ratio >= 0.35:
-                                friction = max(0.05, round(entry * 0.0006 + 0.05, 2))
+                                is_opt = "CE" in sym or "PE" in sym
+                                est_charges = self._estimate_round_trip_charges(entry, entry, qty, side, is_opt=is_opt)
+                                friction = max(0.05, round((est_charges / max(qty, 1)) + 0.05, 2))
                                 be_sl = round(entry - friction, 2)
                                 if pos["stop_loss"] > be_sl:
                                     pos["stop_loss"] = be_sl
@@ -380,30 +439,9 @@ class PaperTradingEngine:
                             except Exception:
                                 pass
 
-                        if curr_vwap > 0 and not is_cnc and (pos["position_id"] not in [p[0] for p in positions_to_close]):
-                            # ⚡ Sustained Thesis Invalidation: Requires at least 3 consecutive ticks above threshold
-                            # to filter out deceptive 5-10 second liquidity sweep wicks
-                            vwap_buffer = max(0.15, round(curr_vwap * 0.0025, 2))
-                            threshold = round(curr_vwap + vwap_buffer, 2)
-                            sl_dist = abs(entry - pos["stop_loss"])
-                            min_underwater_dist = max(0.20, round(max(entry * 0.0025, sl_dist * 0.25), 2))
-                            if current_price > threshold and (current_price - entry) >= min_underwater_dist:
-                                breach_count = pos.get("vwap_breach_count", 0) + 1
-                                pos["vwap_breach_count"] = breach_count
-                                if breach_count >= 3:
-                                    logger.info(
-                                        f"⚡ [THESIS INVALIDATED] {sym}: Price ₹{current_price} confirmed above VWAP ₹{curr_vwap} "
-                                        f"(loss: ₹{round(current_price - entry, 2)} >= ₹{min_underwater_dist}) "
-                                        f"confirmed across {breach_count} ticks. Executing early exit."
-                                    )
-                                    positions_to_close.append((pos["position_id"], "THESIS_INVALIDATED", current_price))
-                                else:
-                                    logger.debug(
-                                        f"⚠️ [VWAP BREACH WARNING] {sym}: Price ₹{current_price} breached VWAP resistance threshold ₹{threshold} "
-                                        f"(breach {breach_count}/3). Awaiting sustained confirmation."
-                                    )
-                            else:
-                                pos["vwap_breach_count"] = 0
+                        if not is_cnc and (pos["position_id"] not in [p[0] for p in positions_to_close]):
+                            if self._evaluate_thesis_invalidation(pos, side, current_price, curr_vwap, now_ist):
+                                positions_to_close.append((pos["position_id"], "THESIS_INVALIDATED", current_price))
 
                 elif is_square_off_time:
                     # 3:15 PM auto square off even if quote not received on this exact tick (MIS only)
@@ -554,9 +592,9 @@ class PaperTradingEngine:
                 else:
                     break
 
-        # 4b. Market Stagnation Circuit Breaker:
-        # If 2 trades have exited on STAGNATION_EXIT (time-stop) today, the market lacks momentum velocity.
-        # Halt fresh auto-entries for the rest of today to prevent theta/stagnation losses.
+        # 4b. Market Stagnation & Whipsaw Circuit Breakers:
+        # - If 2 trades exited on STAGNATION_EXIT, market is dormant -> halt.
+        # - If >= 3 losing trades today OR losses occurred on BOTH BUY and SELL sides (two-sided whipsaw), halt.
         stagnation_exits = sum(1 for t in today_trades if t.get("exit_reason") == "STAGNATION_EXIT")
         if stagnation_exits >= 2:
             logger.info(
@@ -565,23 +603,33 @@ class PaperTradingEngine:
             )
             return
 
+        today_losses = [t for t in today_trades if t.get("net_pnl", 0.0) < 0]
+        buy_losses_today = sum(1 for t in today_losses if t.get("side") == "BUY")
+        sell_losses_today = sum(1 for t in today_losses if t.get("side") == "SELL")
+        if len(today_losses) >= 3 or (buy_losses_today >= 1 and sell_losses_today >= 1):
+            logger.info(
+                f"🛑 [WHIPSAW CIRCUIT BREAKER ACTIVE] Today's losses: {len(today_losses)} "
+                f"(BUY: {buy_losses_today}, SELL: {sell_losses_today}). Halting fresh auto-entries to prevent chop losses."
+            )
+            return
+
         # 4c. Position Staggering & Underwater Guard:
-        # Do not enter a second/third position simultaneously if the currently open position is underwater
-        # or was opened less than 15 minutes ago.
+        # Wait at least 10 minutes after any entry (15 minutes if underwater) before adding another position.
         if len(self.open_positions) > 0:
+            now_utc = now_ist.astimezone(timezone.utc)
             for p in self.open_positions:
                 unrealized = p.get("unrealized_pnl", 0.0)
                 t_str = p.get("entry_time")
-                if t_str and unrealized < 0:
+                if t_str:
                     try:
                         edt = datetime.fromisoformat(t_str)
                         if edt.tzinfo is None:
                             edt = edt.replace(tzinfo=IST)
-                        elapsed = (now_ist - edt).total_seconds() / 60.0
-                        if elapsed < 15.0:
+                        elapsed = (now_utc - edt.astimezone(timezone.utc)).total_seconds() / 60.0
+                        if elapsed < 10.0 or (unrealized < 0 and elapsed < 15.0):
                             logger.info(
                                 f"⏸️ [ENTRY STAGGERING GUARD] Holding fresh entry: Active position {p['symbol']} "
-                                f"entered {elapsed:.0f}m ago is currently underwater (₹{unrealized:.2f}). Awaiting momentum confirmation."
+                                f"entered {elapsed:.0f}m ago (MTM: ₹{unrealized:.2f}). Awaiting confirmation."
                             )
                             return
                     except Exception:
@@ -758,7 +806,10 @@ class PaperTradingEngine:
                     setup_checklist=setup.get("checklist") or [],
                     change_pct=float(setup.get("change_pct") or 0.0),
                     sector=setup.get("sector", "NSE Equity"),
+                    entry_time=now_ist.astimezone(timezone.utc),
                 )
+                # Max 1 fresh position per tick to guarantee staggered execution & prevent simultaneous sector/side sweeps
+                break
 
     def open_position(
         self,
@@ -784,10 +835,11 @@ class PaperTradingEngine:
         setup_checklist: Optional[List[Dict[str, Any]]] = None,
         change_pct: Optional[float] = None,
         sector: Optional[str] = None,
+        entry_time: Optional[datetime] = None,
     ) -> Dict[str, Any]:
         """Creates and tracks a new open paper position."""
         pos_id = f"POS-{uuid.uuid4().hex[:8].upper()}"
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now_iso = (entry_time if entry_time is not None else datetime.now(timezone.utc)).isoformat()
         pos_vwap = round(vwap if vwap is not None else entry_price, 2)
         pos_ema9 = round(ema9 if ema9 is not None else (entry_price * 0.998 if side == "BUY" else entry_price * 1.002), 2)
         pos_ema20 = round(ema20 if ema20 is not None else (entry_price * 0.995 if side == "BUY" else entry_price * 1.005), 2)
@@ -872,25 +924,8 @@ class PaperTradingEngine:
                 gross = round((entry - exit_px) * qty, 2)
 
             # Realistic Indian Brokerage & Statutory Taxes (Equity Intraday & Options):
-            turnover = (entry + exit_px) * qty
             is_opt = "CE" in pos["symbol"] or "PE" in pos["symbol"]
-
-            # Brokerage: ₹20 per executed leg or max 0.05% of turnover (NSE standard)
-            brokerage = round(min(40.0, max(2.0, turnover * 0.0005)), 2)
-
-            # STT: 0.025% on sell turnover for equity intraday; 0.125% on option sell turnover
-            if is_opt:
-                stt = round((exit_px * qty) * 0.00125, 2)
-            else:
-                stt = round((exit_px * qty if side == "BUY" else entry * qty) * 0.00025, 2)
-
-            exch_fee = round(turnover * 0.0000297, 2)
-            gst = round((brokerage + exch_fee) * 0.18, 2)
-            sebi_fee = round(max(0.01, turnover * 0.000001), 2)
-            stamp_duty = round((entry * qty if side == "BUY" else exit_px * qty) * 0.00003, 2)
-
-            charges = round(brokerage + stt + exch_fee + gst + sebi_fee + stamp_duty, 2)
-            charges = max(5.0, charges)
+            charges = self._estimate_round_trip_charges(entry, exit_px, qty, side, is_opt=is_opt)
             net = round(gross - charges, 2)
 
         closed_trade = {

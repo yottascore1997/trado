@@ -157,26 +157,26 @@ class MarketRegimeEngine:
             adv, dec = (60, 40) if n_change > 0 else ((40, 60) if n_change < 0 else (50, 50))
 
         # 4. Quantitative V3 Regime Determination:
-        # A. Dead / Sideways Chop: Range ratio < 0.25 OR (range_pct < 0.35% AND abs(vwap_dist) < 0.12%)
-        is_choppy = (range_ratio < 0.25) or (n_range_pct < 0.35 and abs(n_vwap_dist) < 0.12)
+        # A. Dead / Sideways Chop: Range ratio < 0.25 OR (range_pct < 0.35% AND abs(vwap_dist) < 0.15%)
+        is_choppy = (range_ratio < 0.25) or (n_range_pct < 0.35 and abs(n_vwap_dist) < 0.15)
 
-        # B. Bullish: Above Day Open + Above VWAP (>= 0.08%) + Range ratio >= 0.35 + Breadth >= 50%
+        # B. Bullish: Above Day Open + Above VWAP (>= 0.15%) + Range >= 0.35% + Breadth >= 55%
         is_bullish = (
             not is_choppy
             and n_ltp >= n_open
             and n_session_change >= 0
-            and n_vwap_dist >= 0.08
+            and n_vwap_dist >= 0.15
             and n_range_pct >= 0.35
-            and breadth_pct >= 48.0
+            and breadth_pct >= 55.0
         )
 
-        # C. Bearish: Below Day Open/Net Neg + Below VWAP (<= -0.08%) + Range ratio >= 0.35 + Breadth <= 52%
+        # C. Bearish: Below Day Open/Net Neg + Below VWAP (<= -0.15%) + Range >= 0.35% + Breadth <= 45%
         is_bearish = (
             not is_choppy
             and (n_change < 0 or (n_ltp < n_open and n_session_change < 0))
-            and n_vwap_dist <= -0.08
+            and n_vwap_dist <= -0.15
             and n_range_pct >= 0.35
-            and breadth_pct <= 52.0
+            and breadth_pct <= 45.0
         )
 
         if is_bullish:

@@ -201,6 +201,10 @@ class SetupTrackerEngine:
                                     pos["trailing_description"] = f"Profit Lock: 25% Target Secured (₹{lock_px})"
                             # Stage 1: True Breakeven (35%+ of target distance) -> Shift SL to Entry + Full Charges Friction
                             elif gain_ratio >= 0.35:
+                                turnover = 2.0 * entry * qty
+                                est_brok = min(40.0, max(2.0, turnover * 0.0005))
+                                est_charges = max(5.0, est_brok * 1.18 + entry * qty * 0.00028 + turnover * 0.000035)
+                                per_share_friction = max(0.05, round((est_charges / max(qty, 1)) + 0.05, 2))
                                 be_sl = round(entry + per_share_friction, 2)
                                 if pos["stop_loss"] < be_sl:
                                     pos["stop_loss"] = be_sl
@@ -208,14 +212,24 @@ class SetupTrackerEngine:
                                     pos["trailing_description"] = f"Breakeven Protected: Entry + Charges (₹{be_sl})"
 
                         # Dynamic In-Trade Defensive Exits
-                        # A. Thesis Invalidation (Price sustained below VWAP for 3 ticks)
-                        if curr_vwap > 0 and current_price < (curr_vwap - max(0.15, curr_vwap * 0.002)):
-                            if (entry - current_price) >= max(0.20, entry * 0.0025):
-                                b_count = pos.get("vwap_breach_count", 0) + 1
-                                pos["vwap_breach_count"] = b_count
-                                if b_count >= 3:
-                                    logger.info(f"⚡ [THESIS INVALIDATED] {sym}: Price sustained below VWAP. Early exit.")
-                                    setups_to_close.append((pos["setup_id"], "THESIS_INVALIDATED", current_price))
+                        # A. Thesis Invalidation (Sustained below VWAP >= 5m hold & 15 ticks)
+                        held_enough = True
+                        if pos.get("entry_time"):
+                            try:
+                                edt = datetime.fromisoformat(pos["entry_time"])
+                                if edt.tzinfo is None:
+                                    edt = edt.replace(tzinfo=IST)
+                                held_enough = ((now_ist - edt).total_seconds() / 60.0) >= 5.0
+                            except Exception:
+                                pass
+                        vwap_buf = max(0.25, curr_vwap * 0.0040)
+                        min_uw = max(0.35, entry * 0.0045, abs(entry - pos["stop_loss"]) * 0.50)
+                        if held_enough and curr_vwap > 0 and current_price < (curr_vwap - vwap_buf) and (entry - current_price) >= min_uw:
+                            b_count = pos.get("vwap_breach_count", 0) + 1
+                            pos["vwap_breach_count"] = b_count
+                            if b_count >= 15:
+                                logger.info(f"⚡ [THESIS INVALIDATED] {sym}: Price sustained below VWAP. Early exit.")
+                                setups_to_close.append((pos["setup_id"], "THESIS_INVALIDATED", current_price))
                         else:
                             pos["vwap_breach_count"] = 0
 
@@ -284,6 +298,10 @@ class SetupTrackerEngine:
                                     pos["trailing_description"] = f"Profit Lock: 25% Target Secured (₹{lock_px})"
                             # Stage 1: True Breakeven (35%+ of target distance) -> Shift SL to Entry - Full Charges Friction
                             elif gain_ratio >= 0.35:
+                                turnover = 2.0 * entry * qty
+                                est_brok = min(40.0, max(2.0, turnover * 0.0005))
+                                est_charges = max(5.0, est_brok * 1.18 + entry * qty * 0.00028 + turnover * 0.000035)
+                                per_share_friction = max(0.05, round((est_charges / max(qty, 1)) + 0.05, 2))
                                 be_sl = round(entry - per_share_friction, 2)
                                 if pos["stop_loss"] > be_sl:
                                     pos["stop_loss"] = be_sl
@@ -291,14 +309,24 @@ class SetupTrackerEngine:
                                     pos["trailing_description"] = f"Breakeven Protected: Entry - Charges (₹{be_sl})"
 
                         # Dynamic In-Trade Defensive Exits for SELL
-                        # A. Thesis Invalidation
-                        if curr_vwap > 0 and current_price > (curr_vwap + max(0.15, curr_vwap * 0.002)):
-                            if (current_price - entry) >= max(0.20, entry * 0.0025):
-                                b_count = pos.get("vwap_breach_count", 0) + 1
-                                pos["vwap_breach_count"] = b_count
-                                if b_count >= 3:
-                                    logger.info(f"⚡ [THESIS INVALIDATED] {sym}: Price sustained above VWAP. Early exit.")
-                                    setups_to_close.append((pos["setup_id"], "THESIS_INVALIDATED", current_price))
+                        # A. Thesis Invalidation (Sustained above VWAP >= 5m hold & 15 ticks)
+                        held_enough = True
+                        if pos.get("entry_time"):
+                            try:
+                                edt = datetime.fromisoformat(pos["entry_time"])
+                                if edt.tzinfo is None:
+                                    edt = edt.replace(tzinfo=IST)
+                                held_enough = ((now_ist - edt).total_seconds() / 60.0) >= 5.0
+                            except Exception:
+                                pass
+                        vwap_buf = max(0.25, curr_vwap * 0.0040)
+                        min_uw = max(0.35, entry * 0.0045, abs(entry - pos["stop_loss"]) * 0.50)
+                        if held_enough and curr_vwap > 0 and current_price > (curr_vwap + vwap_buf) and (current_price - entry) >= min_uw:
+                            b_count = pos.get("vwap_breach_count", 0) + 1
+                            pos["vwap_breach_count"] = b_count
+                            if b_count >= 15:
+                                logger.info(f"⚡ [THESIS INVALIDATED] {sym}: Price sustained above VWAP. Early exit.")
+                                setups_to_close.append((pos["setup_id"], "THESIS_INVALIDATED", current_price))
                         else:
                             pos["vwap_breach_count"] = 0
 

@@ -772,6 +772,7 @@ class StockScreenerService:
         import httpx
         from app.config import settings
 
+        self._last_quotes_from_upstox = False
         if settings.MARKET_DATA_PROVIDER.upper() != "UPSTOX" or not settings.UPSTOX_ACCESS_TOKEN:
             return {}
 
@@ -802,6 +803,7 @@ class StockScreenerService:
                     data = res.json().get("data", {})
                     logger.info(f"Successfully fetched {len(data)} live quotes from Upstox API V2.")
                     self._cached_quotes = data
+                    self._last_quotes_from_upstox = True
                     return data
                 else:
                     logger.warning(f"Upstox quotes returned status {res.status_code}: {res.text[:120]}")
@@ -810,6 +812,194 @@ class StockScreenerService:
             if hasattr(self, "_cached_quotes") and self._cached_quotes:
                 return self._cached_quotes
         return {}
+
+    def fetch_intraday_candles(self, symbol: str) -> List[Dict[str, Any]]:
+        """
+        Fetches today's 1-minute intraday candles for a symbol from Upstox API V2
+        with a 60-second in-memory cache to avoid excessive API calls.
+        Returns [] when offline or when running against mocked quote fixtures.
+        """
+        import urllib.parse
+        import httpx
+        from app.config import settings
+
+        if not getattr(self, "_last_quotes_from_upstox", False):
+            return []
+        if settings.MARKET_DATA_PROVIDER.upper() != "UPSTOX" or not settings.UPSTOX_ACCESS_TOKEN:
+            return []
+
+        if not hasattr(self, "_candle_cache"):
+            self._candle_cache = {}
+
+        now_utc = datetime.now(timezone.utc)
+        cached = self._candle_cache.get(symbol)
+        if cached:
+            fetched_at, candles = cached
+            if (now_utc - fetched_at).total_seconds() < 60.0:
+                return candles
+
+        key = self.UPSTOX_EQUITY_KEYS.get(symbol, f"NSE_EQ|{symbol}")
+        encoded_key = urllib.parse.quote(key, safe="")
+        url = f"https://api.upstox.com/v2/historical-candle/intraday/{encoded_key}/1minute"
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {settings.UPSTOX_ACCESS_TOKEN}",
+        }
+
+        try:
+            with httpx.Client(timeout=4.0) as client:
+                res = client.get(url, headers=headers)
+                if res.status_code == 200:
+                    raw_candles = res.json().get("data", {}).get("candles", [])
+                    candles = []
+                    for row in raw_candles:
+                        try:
+                            dt = datetime.fromisoformat(row[0])
+                            candles.append({
+                                "timestamp": dt,
+                                "open": float(row[1]),
+                                "high": float(row[2]),
+                                "low": float(row[3]),
+                                "close": float(row[4]),
+                                "volume": float(row[5]),
+                            })
+                        except Exception:
+                            continue
+                    candles.sort(key=lambda x: x["timestamp"])
+                    self._candle_cache[symbol] = (now_utc, candles)
+                    return candles
+        except Exception as e:
+            logger.debug(f"Intraday candle fetch failed for {symbol}: {e}")
+        return []
+
+    @staticmethod
+    def _resample_1m_to_5m(candles_1m: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Aggregates sorted 1-minute candles into 5-minute OHLCV bars."""
+        if not candles_1m:
+            return []
+        buckets: Dict[datetime, Dict[str, Any]] = {}
+        for c in candles_1m:
+            ts = c["timestamp"]
+            if isinstance(ts, str):
+                ts = datetime.fromisoformat(ts)
+            bucket_ts = ts.replace(minute=(ts.minute // 5) * 5, second=0, microsecond=0)
+            if bucket_ts not in buckets:
+                buckets[bucket_ts] = {
+                    "timestamp": bucket_ts,
+                    "open": float(c["open"]),
+                    "high": float(c["high"]),
+                    "low": float(c["low"]),
+                    "close": float(c["close"]),
+                    "volume": float(c.get("volume", 0.0)),
+                }
+            else:
+                b = buckets[bucket_ts]
+                b["high"] = max(b["high"], float(c["high"]))
+                b["low"] = min(b["low"], float(c["low"]))
+                b["close"] = float(c["close"])
+                b["volume"] += float(c.get("volume", 0.0))
+        return [buckets[k] for k in sorted(buckets.keys())]
+
+    @staticmethod
+    def _compute_ema(values: List[float], period: int) -> float:
+        """Computes standard exponential moving average over a sequence of closes."""
+        if not values:
+            return 0.0
+        if len(values) < period:
+            ema = values[0]
+            k = 2.0 / (period + 1.0)
+            for v in values[1:]:
+                ema = (v * k) + (ema * (1.0 - k))
+            return round(ema, 2)
+        ema = sum(values[:period]) / period
+        k = 2.0 / (period + 1.0)
+        for v in values[period:]:
+            ema = (v * k) + (ema * (1.0 - k))
+        return round(ema, 2)
+
+    @classmethod
+    def analyze_5m_candles(
+        cls,
+        candles_1m: List[Dict[str, Any]],
+        current_price: float,
+        signal: str,
+    ) -> Dict[str, Any]:
+        """
+        Computes real 5-minute EMA 9/20, 15m ORB levels, intraday volume surge RVOL,
+        and 5m directional candle confirmation to block falling-knife / bounce traps.
+        """
+        bars_5m = cls._resample_1m_to_5m(candles_1m)
+        if len(bars_5m) < 5:
+            return {"candles_verified": False, "candles_5m": bars_5m}
+
+        closes = [b["close"] for b in bars_5m]
+        ema_9 = cls._compute_ema(closes, 9)
+        ema_20 = cls._compute_ema(closes, 20)
+
+        # True 15m Opening Range from first 3 five-minute bars (09:15 - 09:30)
+        orb_bars = bars_5m[:3]
+        orb_high_15m = round(max(b["high"] for b in orb_bars), 2)
+        orb_low_15m = round(min(b["low"] for b in orb_bars), 2)
+
+        # Real intraday 5m RVOL (recent bar vs average of earlier bars today)
+        curr_bar = bars_5m[-1]
+        last_completed = bars_5m[-2]
+        prev_completed = bars_5m[-3]
+        recent_vol = max(curr_bar["volume"], last_completed["volume"])
+        baseline_bars = bars_5m[:-2] if len(bars_5m) >= 6 else bars_5m[:-1]
+        avg_vol = sum(b["volume"] for b in baseline_bars) / max(len(baseline_bars), 1)
+        real_rvol = round(max(0.3, min(5.0, recent_vol / max(avg_vol, 1.0))), 2)
+
+        structure_5m = price_action_engine.evaluate_market_structure(
+            bars_5m, "BULLISH" if signal == "BUY" else "BEARISH"
+        )
+
+        momentum_confirmed = True
+        rejection_reason = ""
+
+        if signal == "BUY":
+            two_red_5m = (last_completed["close"] < last_completed["open"]) and (curr_bar["close"] < curr_bar["open"])
+            breaking_down = current_price < prev_completed["low"] and last_completed["close"] < last_completed["open"]
+            if ema_9 <= ema_20:
+                momentum_confirmed = False
+                rejection_reason = f"5m EMA 9 ({ema_9}) <= EMA 20 ({ema_20})"
+            elif structure_5m == "LH_LL":
+                momentum_confirmed = False
+                rejection_reason = "5m structure making Lower Highs / Lower Lows"
+            elif two_red_5m or breaking_down:
+                momentum_confirmed = False
+                rejection_reason = "Bearish 5m candle pullback opposing BUY (falling into VWAP)"
+            elif real_rvol < 1.20:
+                momentum_confirmed = False
+                rejection_reason = f"Weak 5m candle volume ({real_rvol}x < 1.20x)"
+        elif signal == "SELL":
+            two_green_5m = (last_completed["close"] > last_completed["open"]) and (curr_bar["close"] > curr_bar["open"])
+            bouncing_up = current_price > prev_completed["high"] and last_completed["close"] > last_completed["open"]
+            if ema_9 >= ema_20:
+                momentum_confirmed = False
+                rejection_reason = f"5m EMA 9 ({ema_9}) >= EMA 20 ({ema_20})"
+            elif structure_5m == "HH_HL":
+                momentum_confirmed = False
+                rejection_reason = "5m structure making Higher Highs / Higher Lows"
+            elif two_green_5m or bouncing_up:
+                momentum_confirmed = False
+                rejection_reason = "Bullish 5m candle bounce opposing SELL (rising into VWAP)"
+            elif real_rvol < 1.20:
+                momentum_confirmed = False
+                rejection_reason = f"Weak 5m candle volume ({real_rvol}x < 1.20x)"
+
+        return {
+            "candles_verified": True,
+            "candles_5m": bars_5m,
+            "ema_9": ema_9,
+            "ema_20": ema_20,
+            "orb_high_15m": orb_high_15m,
+            "orb_low_15m": orb_low_15m,
+            "real_rvol": real_rvol,
+            "structure_5m": structure_5m,
+            "momentum_confirmed": momentum_confirmed,
+            "rejection_reason": rejection_reason,
+        }
 
     def get_indices_status(self, live_data: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """Returns current state of benchmark indices (NIFTY 50 and BANK NIFTY), fetching live from Upstox if configured."""
@@ -1069,7 +1259,9 @@ class StockScreenerService:
             alloc_per_stock_max = budget
             leverage = 1.0
             prod_type = "MIS"
+        self._last_quotes_from_upstox = False
         live_quotes = self.fetch_live_quotes()
+        from_live_upstox = bool(getattr(self, "_last_quotes_from_upstox", False))
         indices = self.get_indices_status(live_data=live_quotes)
         nifty_status = indices[0] if indices else {"price": 0.0, "change_pct": 0.0, "trend": "NEUTRAL", "regime": "SIDEWAYS_CHOP"}
         n_ltp = nifty_status["price"]
@@ -1083,17 +1275,13 @@ class StockScreenerService:
         elapsed_mins = max(15.0, min(375.0, (now_ist - session_start).total_seconds() / 60.0))
         expected_vol_fraction = elapsed_mins / 375.0
 
-        # Dynamic Sector Health & Trend Strength Calculation from Live Quotes
-        SECTOR_COMPONENT_MAP = {
-            "IT Services": ["TCS", "INFY", "HCLTECH", "TECHM", "WIPRO"],
-            "Private Banking": ["HDFCBANK", "ICICIBANK", "AXISBANK", "KOTAKBANK", "INDUSINDBK"],
-            "Public Banking": ["SBIN", "PNB", "CANBK", "BANKBARODA"],
-            "Automobile": ["TATAMOTORS", "M&M", "MARUTI", "BAJAJ-AUTO", "HEROMOTOCO"],
-            "NBFC & Finance": ["BAJFINANCE", "BAJAJFINSV", "CHOLAFIN", "SHRIRAMFIN", "RECLTD", "JIOFIN"],
-            "Metals & Mining": ["TATASTEEL", "JINDALSTEL", "VEDL", "HINDALCO", "JSWSTEEL"],
-            "Real Estate": ["DLF", "GODREJPROP", "OBEROIRLTY"],
-            "Cement": ["AMBUJACEM", "ULTRACEMCO", "SHREECEM"],
-        }
+        # Dynamic Sector Health & Trend Strength Calculation across ALL Sectors in Universe
+        SECTOR_COMPONENT_MAP: Dict[str, List[str]] = {}
+        for item in self.STOCKS_UNIVERSE:
+            sec = item.get("sector")
+            if sec:
+                SECTOR_COMPONENT_MAP.setdefault(sec, []).append(item["symbol"])
+
         sector_performance = {}
         if live_quotes:
             for sec_name, sec_syms in SECTOR_COMPONENT_MAP.items():
@@ -1104,21 +1292,32 @@ class StockScreenerService:
                     if q and "last_price" in q:
                         lp = float(q["last_price"])
                         ohlc_s = q.get("ohlc", {})
-                        cp = float(ohlc_s.get("close", lp))
-                        if cp > 0:
-                            sec_changes.append(((lp - cp) / cp) * 100.0)
+                        open_s = float(ohlc_s.get("open", lp))
+                        net_chg = q.get("net_change")
+                        prev_close_s = (lp - float(net_chg)) if net_chg is not None else float(ohlc_s.get("close", open_s))
+                        ref_p = prev_close_s if prev_close_s > 0 else open_s
+                        if ref_p > 0:
+                            sec_changes.append(((lp - ref_p) / ref_p) * 100.0)
                         avg_p = float(q.get("average_price") or q.get("vwap") or lp)
                         if lp >= avg_p:
                             sec_above_vwap += 1
                 if sec_changes:
                     avg_chg = sum(sec_changes) / len(sec_changes)
                     vwap_ratio = sec_above_vwap / len(sec_changes)
-                    if avg_chg >= 0.15 and vwap_ratio >= 0.50:
-                        sec_status = "BULLISH"
-                    elif avg_chg <= -0.15 or vwap_ratio < 0.30:
-                        sec_status = "BEARISH"
+                    if len(sec_changes) == 1:
+                        if avg_chg >= 0.25 and vwap_ratio == 1.0:
+                            sec_status = "BULLISH"
+                        elif avg_chg <= -0.25 and vwap_ratio == 0.0:
+                            sec_status = "BEARISH"
+                        else:
+                            sec_status = "NEUTRAL"
                     else:
-                        sec_status = "NEUTRAL"
+                        if avg_chg >= 0.15 and vwap_ratio >= 0.50:
+                            sec_status = "BULLISH"
+                        elif avg_chg <= -0.15 or vwap_ratio < 0.30:
+                            sec_status = "BEARISH"
+                        else:
+                            sec_status = "NEUTRAL"
                     sector_performance[sec_name] = {
                         "avg_change_pct": round(avg_chg, 2),
                         "status": sec_status,
@@ -1346,7 +1545,11 @@ class StockScreenerService:
             # ============================================================
             # INDEX ALIGNMENT, RELATIVE STRENGTH & DYNAMIC ATR EXTENSION
             # ============================================================
-            is_nifty_choppy = nifty_status.get("regime") == "SIDEWAYS_CHOP"
+            breadth_total = int(nifty_status.get("advancers", 0)) + int(nifty_status.get("decliners", 0))
+            v3_reg = nifty_status.get("v3_regime")
+            is_nifty_choppy = (nifty_status.get("regime") == "SIDEWAYS_CHOP") or (
+                breadth_total >= 5 and v3_reg in ("MARKET_CHOPPY", "MARKET_NEUTRAL")
+            )
 
             # 3. Dynamic ATR & Distance Anti-Chasing Guard (Never buy extended tops)
             vwap_distance = abs(price - vwap)
@@ -1411,7 +1614,7 @@ class StockScreenerService:
                 (signal == "SELL" and relative_strength <= -0.20 and rvol >= 1.25)
             )
 
-            if is_nifty_choppy:
+            if is_nifty_choppy and signal in ("BUY", "SELL"):
                 signal = "NO_TRADE"
                 setup_type = "Filtered: NIFTY in Sideways Chop"
                 ai_score = min(ai_score, 50)
@@ -1458,9 +1661,10 @@ class StockScreenerService:
             elif is_nifty_choppy:
                 is_index_aligned = False
                 alignment_status = "CHOP_CAUTION"
-                signal = "NO_TRADE"
-                setup_type = "Filtered: NIFTY in Sideways Chop"
-                ai_score = min(ai_score, 50)
+                if signal in ("BUY", "SELL"):
+                    signal = "NO_TRADE"
+                    setup_type = "Filtered: NIFTY in Sideways Chop"
+                    ai_score = min(ai_score, 50)
 
             # Institutional Integrity Override: If any gatekeeper set signal to NO_TRADE, reset entry status
             if signal == "NO_TRADE":
@@ -1720,6 +1924,82 @@ class StockScreenerService:
             screened_stocks.append(stock_entry)
 
         # Sort all screened stocks by Composite Multi-Factor Rank Score descending
+        screened_stocks.sort(key=lambda x: x.get("composite_rank_score", x["ai_score"]), reverse=True)
+
+        # Post-Quote Real 5m Intraday Candle Verification for Top Shortlisted Candidates
+        candle_candidates = [
+            s for s in screened_stocks
+            if s["signal"] in ("BUY", "SELL") and s.get("ai_score", 0) >= 65
+        ]
+        candle_candidates.sort(
+            key=lambda x: (
+                1 if x.get("entry_status") == "READY_NOW" else 0,
+                x.get("composite_rank_score", x.get("ai_score", 0)),
+            ),
+            reverse=True,
+        )
+        for s in candle_candidates[:15]:
+            candles_1m = self.fetch_intraday_candles(s["symbol"])
+            if candles_1m:
+                c_eval = self.analyze_5m_candles(candles_1m, s["price"], s["signal"])
+                if c_eval.get("candles_verified"):
+                    real_ema9 = c_eval["ema_9"]
+                    real_ema20 = c_eval["ema_20"]
+                    real_rvol = c_eval["real_rvol"]
+                    bars_5m = c_eval["candles_5m"]
+                    s["ema_9"] = real_ema9
+                    s["ema_20"] = real_ema20
+                    s["rvol"] = real_rvol
+                    s["orb_high_15m"] = c_eval["orb_high_15m"]
+                    s["orb_low_15m"] = c_eval["orb_low_15m"]
+                    s["candles_verified"] = True
+
+                    pa_reval = price_action_engine.evaluate_stock_price_action(
+                        symbol=s["symbol"],
+                        current_price=s["price"],
+                        strategy_signal=s["signal"],
+                        base_price=s["price"],
+                        vwap=s["vwap"],
+                        rvol=real_rvol,
+                        index_aligned=s.get("index_aligned", False),
+                        setup_type=s.get("setup_type", ""),
+                        market_regime=nifty_status.get("regime", "TRENDING"),
+                        relative_strength=s.get("relative_strength", 0.0),
+                        ema_9=real_ema9,
+                        ema_20=real_ema20,
+                        upper_wick_ratio=s.get("upper_wick_ratio", 0.0),
+                        lower_wick_ratio=s.get("lower_wick_ratio", 0.0),
+                        vwap_dist_atr=s.get("vwap_dist_atr"),
+                        body_ratio=s.get("body_ratio"),
+                        candles_5m=bars_5m,
+                    )
+                    s["market_structure"] = pa_reval.market_structure
+                    s["price_action_score"] = pa_reval.score
+                    s["pa_checklist"] = pa_reval.checklist
+
+                    if not c_eval["momentum_confirmed"] or pa_reval.setup_tier == "C":
+                        reason_txt = c_eval.get("rejection_reason") or pa_reval.filter_verdict
+                        s["signal"] = "NO_TRADE"
+                        s["entry_status"] = "NO_TRADE"
+                        s["entry_badge"] = "⚪ NO TRADE"
+                        s["setup_tier"] = "C"
+                        s["ai_score"] = min(s.get("ai_score", 50), 50)
+                        s["setup_type"] = f"Blocked: {reason_txt}"
+                        s["filter_verdict"] = pa_reval.filter_verdict
+                    else:
+                        s["setup_tier"] = pa_reval.setup_tier
+                        s["filter_verdict"] = pa_reval.filter_verdict
+                elif from_live_upstox:
+                    s["candles_verified"] = False
+                    if s.get("entry_status") == "READY_NOW":
+                        s["entry_status"] = "WAIT_FOR_DIP"
+                        s["entry_badge"] = "🟡 AWAITING 5M CANDLE CONFIRMATION"
+            elif from_live_upstox:
+                s["candles_verified"] = False
+                if s.get("entry_status") == "READY_NOW":
+                    s["entry_status"] = "WAIT_FOR_DIP"
+                    s["entry_badge"] = "🟡 AWAITING 5M CANDLE CONFIRMATION"
+
         screened_stocks.sort(key=lambda x: x.get("composite_rank_score", x["ai_score"]), reverse=True)
 
         # Top Setups are high-conviction BUY or SELL with Tier A+ or A (AI Score >= 75)

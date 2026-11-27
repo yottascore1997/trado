@@ -34,8 +34,25 @@ class PriceActionEngine:
     @staticmethod
     def evaluate_market_structure(candles: Optional[List[Dict[str, Any]]] = None, base_trend: str = "BULLISH") -> str:
         """
-        Determines market structure (HH/HL, LH/LL, or SIDEWAYS_CHOP).
+        Determines market structure (HH_HL, LH_LL, or SIDEWAYS_CHOP) from real 5m candles
+        when available, falling back to base_trend only when candle history is absent.
         """
+        if candles and len(candles) >= 6:
+            window = candles[-8:]
+            mid = len(window) // 2
+            earlier = window[:mid]
+            recent = window[mid:]
+            prev_high = max(float(c["high"]) for c in earlier)
+            prev_low = min(float(c["low"]) for c in earlier)
+            curr_high = max(float(c["high"]) for c in recent)
+            curr_low = min(float(c["low"]) for c in recent)
+
+            if curr_high > prev_high and curr_low >= prev_low:
+                return "HH_HL"
+            if curr_low < prev_low and curr_high <= prev_high:
+                return "LH_LL"
+            return "SIDEWAYS_CHOP"
+
         if base_trend == "BULLISH":
             return "HH_HL"
         elif base_trend == "BEARISH":
@@ -63,6 +80,7 @@ class PriceActionEngine:
         lower_wick_ratio: float = 0.0,
         vwap_dist_atr: Optional[float] = None,
         body_ratio: Optional[float] = None,
+        candles_5m: Optional[List[Dict[str, Any]]] = None,
     ) -> PriceActionEvaluation:
         """
         Evaluates the 0-20 Price Action Scoring Rubric for a given stock with institutional
@@ -138,30 +156,40 @@ class PriceActionEngine:
             verdict = f"C Setup (FILTERED): Price Action blocks trade for {symbol}. Choppy range-bound action with no breakout or structure."
 
         elif is_buy:
-            structure = "HH_HL"
+            structure = self.evaluate_market_structure(candles_5m, "BULLISH")
             pa_setup = "Breakout + Retest Continuation" if rvol >= 1.8 else "Support Retest / Dynamic VWAP"
             is_below_day_open = (day_open is not None and current_price < day_open)
             is_wick_rejection = upper_wick_ratio > 0.35
-            breakout_passed = (current_price > vwap) and (range_pos >= 0.60) and not is_below_day_open and not is_wick_rejection
-            retest_passed = (current_price >= retest_level) and (current_price > vwap) and not is_below_day_open
+            opposing_5m = False
+            if candles_5m and len(candles_5m) >= 3:
+                last_c, prev_c = candles_5m[-1], candles_5m[-2]
+                two_red_5m = (last_c["close"] < last_c["open"]) and (prev_c["close"] < prev_c["open"])
+                if structure == "LH_LL" or two_red_5m or (current_price < prev_c["low"] and last_c["close"] < last_c["open"]):
+                    opposing_5m = True
+            breakout_passed = (current_price > vwap) and (range_pos >= 0.60) and not is_below_day_open and not is_wick_rejection and not opposing_5m
+            retest_passed = (current_price >= retest_level) and (current_price > vwap) and not is_below_day_open and not opposing_5m
             vol_passed = rvol >= 1.4
-            candle_passed = not is_below_day_open and (rvol >= 1.4) and not is_wick_rejection
+            candle_passed = not is_below_day_open and (rvol >= 1.4) and not is_wick_rejection and not opposing_5m
 
-            structure_pts = 4 if (bullish_ribbon and not is_below_day_open) else 0
-            breakout_pts = 4 if breakout_passed else (2 if (range_pos >= 0.50 and not is_below_day_open and not is_wick_rejection) else 0)
-            retest_pts = 4 if retest_passed else (2 if not is_below_day_open else 0)
+            structure_pts = 4 if (bullish_ribbon and not is_below_day_open and structure == "HH_HL") else (2 if (bullish_ribbon and not is_below_day_open and structure != "LH_LL") else 0)
+            breakout_pts = 4 if breakout_passed else (2 if (range_pos >= 0.50 and not is_below_day_open and not is_wick_rejection and not opposing_5m) else 0)
+            retest_pts = 4 if retest_passed else (2 if not is_below_day_open and not opposing_5m else 0)
             vol_pts = 3 if rvol >= 1.75 else (2 if rvol >= 1.4 else (1 if rvol >= 1.15 else 0))
-            candle_pts = 2 if candle_passed else (1 if not is_below_day_open and not is_wick_rejection else 0)
+            candle_pts = 2 if candle_passed else (1 if not is_below_day_open and not is_wick_rejection and not opposing_5m else 0)
 
             candle_detail = (
                 "Clean bullish expansion without upper selling wick"
-                if (not is_wick_rejection and candle_pts >= 1)
-                else (f"Upper rejection wick {int(upper_wick_ratio*100)}% > 35% (Selling into highs)" if is_wick_rejection else "Weak closing candle (selling pressure / red bar)")
+                if (not is_wick_rejection and not opposing_5m and candle_pts >= 1)
+                else (
+                    "Bearish 5m momentum/structure opposing BUY (falling into VWAP)"
+                    if opposing_5m
+                    else (f"Upper rejection wick {int(upper_wick_ratio*100)}% > 35% (Selling into highs)" if is_wick_rejection else "Weak closing candle (selling pressure / red bar)")
+                )
             )
 
             checklist = [
-                {"rule": "Market Structure (HH + HL sequence)", "points": structure_pts, "max": 4, "passed": bullish_ribbon and not is_below_day_open, "detail": "Series of Higher Highs & Higher Lows on 5m/15m" if (bullish_ribbon and not is_below_day_open) else "Trading below Day Open or EMA 9 < 20"},
-                {"rule": "Breakout Quality (Full-body close)", "points": breakout_pts, "max": 4, "passed": breakout_passed, "detail": f"Strong bullish expansion above VWAP ₹{vwap:.2f} (Top {int(max(0, 1-range_pos)*100)}% of range)" if breakout_passed else ("Upper rejection wick into highs" if is_wick_rejection else "Price hovering in mid-range or below open")},
+                {"rule": "Market Structure (HH + HL sequence)", "points": structure_pts, "max": 4, "passed": bullish_ribbon and not is_below_day_open and structure == "HH_HL", "detail": "Series of Higher Highs & Higher Lows on 5m/15m" if (bullish_ribbon and not is_below_day_open and structure == "HH_HL") else "Trading below Day Open, EMA 9 < 20, or non-bullish 5m structure"},
+                {"rule": "Breakout Quality (Full-body close)", "points": breakout_pts, "max": 4, "passed": breakout_passed, "detail": f"Strong bullish expansion above VWAP ₹{vwap:.2f} (Top {int(max(0, 1-range_pos)*100)}% of range)" if breakout_passed else ("Upper rejection wick into highs" if is_wick_rejection else "Price hovering in mid-range, below open, or losing 5m momentum")},
                 {"rule": "Retest Confirmation (Support held)", "points": retest_pts, "max": 4, "passed": retest_passed, "detail": f"Prior resistance flipped to support near ₹{retest_level:.2f}" if retest_passed else "Awaiting clean support retest"},
                 {"rule": "Volume Context (Breakout Surge)", "points": vol_pts, "max": 3, "passed": vol_passed, "detail": f"{rvol}x volume expansion on breakout" if vol_passed else f"Weak volume participation ({rvol}x < 1.4x)"},
                 {"rule": "Key S/R Interaction", "points": 3 if not is_below_day_open else 1, "max": 3, "passed": not is_below_day_open, "detail": "Breakout clean from consolidation shelf" if not is_below_day_open else "Price collapsed below opening range"},
@@ -181,6 +209,9 @@ class PriceActionEngine:
             elif is_doji:
                 tier = "C"
                 verdict = f"C Setup (FILTERED): {symbol} indecision doji candle ({int(body_ratio*100)}% body < 35%)."
+            elif opposing_5m:
+                tier = "C"
+                verdict = f"C Setup (FILTERED): {symbol} 5m candle momentum/structure opposing BUY."
             elif index_aligned and total_score >= 17 and rvol >= 1.60 and range_pos >= 0.60:
                 tier = "A+"
                 verdict = f"A+ Prime Setup: Confirmed Breakout & Retest with strong S/R polarity flip and {rvol}x RVOL."
@@ -195,30 +226,40 @@ class PriceActionEngine:
                 verdict = f"C Setup (FILTERED): Low price-action conviction for {symbol}."
 
         else:  # is_sell
-            structure = "LH_LL"
+            structure = self.evaluate_market_structure(candles_5m, "BEARISH")
             pa_setup = "Support Breakdown & Retest Rejection"
             is_above_day_open = (day_open is not None and current_price > day_open)
             is_wick_absorption = lower_wick_ratio > 0.35
-            breakdown_passed = (current_price < vwap) and (range_pos <= 0.40) and not is_above_day_open and not is_wick_absorption
-            retest_passed = (current_price <= retest_level) and (current_price < vwap) and not is_above_day_open
+            opposing_5m = False
+            if candles_5m and len(candles_5m) >= 3:
+                last_c, prev_c = candles_5m[-1], candles_5m[-2]
+                two_green_5m = (last_c["close"] > last_c["open"]) and (prev_c["close"] > prev_c["open"])
+                if structure == "HH_HL" or two_green_5m or (current_price > prev_c["high"] and last_c["close"] > last_c["open"]):
+                    opposing_5m = True
+            breakdown_passed = (current_price < vwap) and (range_pos <= 0.40) and not is_above_day_open and not is_wick_absorption and not opposing_5m
+            retest_passed = (current_price <= retest_level) and (current_price < vwap) and not is_above_day_open and not opposing_5m
             vol_passed = rvol >= 1.4
-            candle_passed = not is_above_day_open and (rvol >= 1.4) and not is_wick_absorption
+            candle_passed = not is_above_day_open and (rvol >= 1.4) and not is_wick_absorption and not opposing_5m
 
-            structure_pts = 4 if (bearish_ribbon and not is_above_day_open) else 0
-            breakdown_pts = 4 if breakdown_passed else (2 if (range_pos <= 0.50 and not is_above_day_open and not is_wick_absorption) else 0)
-            retest_pts = 4 if retest_passed else (2 if not is_above_day_open else 0)
+            structure_pts = 4 if (bearish_ribbon and not is_above_day_open and structure == "LH_LL") else (2 if (bearish_ribbon and not is_above_day_open and structure != "HH_HL") else 0)
+            breakdown_pts = 4 if breakdown_passed else (2 if (range_pos <= 0.50 and not is_above_day_open and not is_wick_absorption and not opposing_5m) else 0)
+            retest_pts = 4 if retest_passed else (2 if not is_above_day_open and not opposing_5m else 0)
             vol_pts = 3 if rvol >= 1.75 else (2 if rvol >= 1.4 else (1 if rvol >= 1.2 else 0))
-            candle_pts = 2 if candle_passed else (1 if not is_above_day_open and not is_wick_absorption else 0)
+            candle_pts = 2 if candle_passed else (1 if not is_above_day_open and not is_wick_absorption and not opposing_5m else 0)
 
             candle_detail = (
                 "Bearish candle close near session lows without lower absorption wick"
-                if (not is_wick_absorption and candle_pts >= 1)
-                else (f"Lower absorption wick {int(lower_wick_ratio*100)}% > 35% (Demand absorption at low)" if is_wick_absorption else "Bullish wick / buying absorption / green bar")
+                if (not is_wick_absorption and not opposing_5m and candle_pts >= 1)
+                else (
+                    "Bullish 5m momentum/structure opposing SELL (bouncing into VWAP)"
+                    if opposing_5m
+                    else (f"Lower absorption wick {int(lower_wick_ratio*100)}% > 35% (Demand absorption at low)" if is_wick_absorption else "Bullish wick / buying absorption / green bar")
+                )
             )
 
             checklist = [
-                {"rule": "Market Structure (LH + LL sequence)", "points": structure_pts, "max": 4, "passed": bearish_ribbon and not is_above_day_open, "detail": "Clear Lower Highs and Lower Lows on 5m and 15m" if (bearish_ribbon and not is_above_day_open) else "Trading above Day Open or EMA 9 > 20"},
-                {"rule": "Breakdown Quality (Full-body close)", "points": breakdown_pts, "max": 4, "passed": breakdown_passed, "detail": f"Decisive bearish close below VWAP ₹{vwap:.2f} (Near Day's Low)" if breakdown_passed else ("Lower absorption wick at support" if is_wick_absorption else "Price floating mid-range or above open")},
+                {"rule": "Market Structure (LH + LL sequence)", "points": structure_pts, "max": 4, "passed": bearish_ribbon and not is_above_day_open and structure == "LH_LL", "detail": "Clear Lower Highs and Lower Lows on 5m and 15m" if (bearish_ribbon and not is_above_day_open and structure == "LH_LL") else "Trading above Day Open, EMA 9 > 20, or non-bearish 5m structure"},
+                {"rule": "Breakdown Quality (Full-body close)", "points": breakdown_pts, "max": 4, "passed": breakdown_passed, "detail": f"Decisive bearish close below VWAP ₹{vwap:.2f} (Near Day's Low)" if breakdown_passed else ("Lower absorption wick at support" if is_wick_absorption else "Price floating mid-range, above open, or bouncing on 5m")},
                 {"rule": "Retest Confirmation (Resistance held)", "points": retest_pts, "max": 4, "passed": retest_passed, "detail": f"Weak bounce rejected at breakdown level ₹{retest_level:.2f}" if retest_passed else "Awaiting resistance retest confirmation"},
                 {"rule": "Volume Context (Breakdown Surge)", "points": vol_pts, "max": 3, "passed": vol_passed, "detail": f"{rvol}x aggressive selling volume" if vol_passed else f"Sub-par volume breakdown ({rvol}x < 1.4x)"},
                 {"rule": "Key S/R Interaction", "points": 3 if not is_above_day_open else 1, "max": 3, "passed": not is_above_day_open, "detail": "Confluence with declining VWAP slope" if not is_above_day_open else "Price floating above day open"},
@@ -238,6 +279,9 @@ class PriceActionEngine:
             elif is_doji:
                 tier = "C"
                 verdict = f"C Short Setup (FILTERED): {symbol} indecision doji candle ({int(body_ratio*100)}% body < 35%)."
+            elif opposing_5m:
+                tier = "C"
+                verdict = f"C Short Setup (FILTERED): {symbol} 5m candle momentum/structure opposing SELL."
             elif index_aligned and total_score >= 17 and rvol >= 1.60 and range_pos <= 0.40:
                 tier = "A+"
                 verdict = f"A+ Prime Short Setup: Confirmed breakdown with strong rejection and {rvol}x RVOL."
